@@ -1,0 +1,13 @@
+[package]
+name = "template_plugin"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# TODO: Use git here!
+cimvr_common = { path = "../chatimprovr/common" }
+cimvr_engine_interface = { path = "../chatimprovr/engine_interface" }
+serde = { version = "1", features = ["derive"] }
