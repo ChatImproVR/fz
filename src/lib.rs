@@ -1,12 +1,24 @@
-use cimvr_engine_interface::{make_app_state, prelude::*, println};
+use cimvr_common::{
+    render::{Primitive, Render, RenderData, RenderHandle},
+    Transform,
+};
+use cimvr_engine_interface::{make_app_state, pkg_namespace, prelude::*, println};
+
+use crate::obj::obj_lines_to_mesh;
+
+mod obj;
 
 // All state associated with client-side behaviour
 struct ClientState;
 
+pub const SHIP_RDR: RenderHandle = RenderHandle::new(pkg_namespace!("Ship"));
+
 impl UserState for ClientState {
     // Implement a constructor
-    fn new(_io: &mut EngineIo, _sched: &mut EngineSchedule<Self>) -> Self {
-        println!("Hello, client!");
+    fn new(io: &mut EngineIo, _sched: &mut EngineSchedule<Self>) -> Self {
+        //let mesh = obj_lines_to_mesh(include_str!("assets/ship.obj"));
+        let mesh = obj_lines_to_mesh(include_str!("assets/ship.obj"));
+        io.send(&RenderData { mesh, id: SHIP_RDR });
 
         // NOTE: We are using the println defined by cimvr_engine_interface here, NOT the standard library!
         cimvr_engine_interface::println!("This prints");
@@ -21,7 +33,12 @@ struct ServerState;
 
 impl UserState for ServerState {
     // Implement a constructor
-    fn new(_io: &mut EngineIo, _sched: &mut EngineSchedule<Self>) -> Self {
+    fn new(io: &mut EngineIo, _sched: &mut EngineSchedule<Self>) -> Self {
+        let ent = io.create_entity();
+        io.add_component(ent, &Transform::identity());
+        io.add_component(ent, &Render::new(SHIP_RDR).primitive(Primitive::Lines));
+        io.add_component(ent, &Synchronized);
+
         println!("Hello, server!");
         Self
     }
@@ -30,10 +47,3 @@ impl UserState for ServerState {
 // Defines entry points for the engine to hook into.
 // Calls new() for the appropriate state.
 make_app_state!(ClientState, ServerState);
-
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn im_a_test() {}
-}
