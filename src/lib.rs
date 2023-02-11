@@ -1,5 +1,5 @@
 use cimvr_common::{
-    render::{Primitive, Render, RenderData, RenderHandle},
+    render::{Primitive, Render, UploadMesh, MeshHandle},
     Transform,
 };
 use cimvr_engine_interface::{make_app_state, pkg_namespace, prelude::*, println};
@@ -7,18 +7,19 @@ use cimvr_engine_interface::{make_app_state, pkg_namespace, prelude::*, println}
 use crate::obj::obj_lines_to_mesh;
 
 mod obj;
+mod curve;
 
 // All state associated with client-side behaviour
 struct ClientState;
 
-pub const SHIP_RDR: RenderHandle = RenderHandle::new(pkg_namespace!("Ship"));
+pub const SHIP_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Ship"));
 
 impl UserState for ClientState {
     // Implement a constructor
     fn new(io: &mut EngineIo, _sched: &mut EngineSchedule<Self>) -> Self {
         //let mesh = obj_lines_to_mesh(include_str!("assets/ship.obj"));
         let mesh = obj_lines_to_mesh(include_str!("assets/ship.obj"));
-        io.send(&RenderData { mesh, id: SHIP_RDR });
+        io.send(&UploadMesh { mesh, id: SHIP_RDR });
 
         // NOTE: We are using the println defined by cimvr_engine_interface here, NOT the standard library!
         cimvr_engine_interface::println!("This prints");
