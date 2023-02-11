@@ -21,7 +21,6 @@ pub fn obj_lines_to_mesh(obj: &str) -> Mesh {
 
                 for part in &mut parts {
                     // Get strings from the rest of the line
-                    // The by_ref() here allows us to keep eating the line on the next loop
                     for dim in part {
                         let Some(text) = rest.next() else { break };
                         *dim = text.parse().expect("Invalid float");
