@@ -1,8 +1,12 @@
-use cimvr_common::nalgebra::{Point3, Vector3};
+use cimvr_common::{
+    nalgebra::{Point3, Vector3, UnitQuaternion},
+    Transform,
+};
 
 pub struct Curve(pub Vec<ControlPoint>);
 
 pub struct ControlPoint {
+    pub up: Vector3<f32>,
     pub dir: Vector3<f32>,
     pub pos: Point3<f32>,
 }
@@ -29,12 +33,22 @@ impl Curve {
         }
     }
 
-    pub fn interp(&self, t: f32) -> Point3<f32> {
+    pub fn pos(&self, t: f32) -> Point3<f32> {
         self.get_quad(t).interp(t.fract())
     }
 
     pub fn deriv(&self, t: f32) -> Vector3<f32> {
         self.get_quad(t).deriv(t.fract())
+    }
+
+    pub fn up(&self, t: f32) -> Vector3<f32> {
+        let i = t.floor() as usize;
+        let a = self.0[i].up;
+        let b = self.0[i + 1].up;
+
+        let f = t.fract();
+
+        (1. - f) * a + f * b
     }
 }
 
@@ -53,4 +67,16 @@ impl QuadBezier {
             + 6. * neg.powi(1) * t.powi(1) * (self.c - self.b)
             + 3. * neg.powi(0) * t.powi(2) * (self.d - self.c)
     }
+}
+
+pub fn sample_path(curve: &Curve, n: usize) -> Vec<Transform> {
+    let mut orient = UnitQuaternion::new();
+
+    let mut transf = vec![];
+
+    for _ in 0..n {
+        orient *= UnitQuaternion::rotation_between();
+    }
+
+    transf
 }
