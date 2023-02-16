@@ -17,6 +17,9 @@ pub const PATH_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Path"));
 pub const ENVIRONMENT_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Environment"));
 pub const FLOOR_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Floor"));
 
+// Need a function which can turn a position in 3D and a previous value, and return a next value
+// This value correspondss to the curve interpolation over the whole shibam
+
 fn orientations(mesh: &Mesh) -> Vec<Transform> {
     let mut transforms = vec![];
 
@@ -125,20 +128,22 @@ impl ServerState {
 
         if let Some(FrameTime { time, .. }) = io.inbox_first() {
             let time = time * 2.;
-
-            let i = time.floor() as usize;
-            let len = self.transforms.len();
-            self.n = i % len;
-
-            let behind = self.transforms[self.n];
-            let in_front = self.transforms[(self.n + 1) % len];
-
-            let interp = time.fract();
-            let transf = transf_lerp(behind, in_front, interp);
-
+            let transf = curve(&self.transforms, time);
             io.add_component(self.ship_ent, &transf);
         }
     }
+}
+
+fn curve(transf: &[Transform], t: f32) -> Transform {
+    // Index part of path position
+    let i = t.floor() as usize;
+    let len = transf.len();
+
+    let behind = transf[i % len];
+    let in_front = transf[(i + 1) % len];
+
+    let interp = t.fract();
+    transf_lerp(behind, in_front, interp)
 }
 
 fn transf_lerp(a: Transform, b: Transform, t: f32) -> Transform {
