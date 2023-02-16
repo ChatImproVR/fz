@@ -108,10 +108,27 @@ impl ServerState {
         //self.n = (self.n + 1) % self.transforms.len();
 
         if let Some(FrameTime { time, .. }) = io.inbox_first() {
-            let i = (time * 8.) as usize;
-            self.n = i % self.transforms.len();
-            io.add_component(self.ship_ent, &self.transforms[self.n]);
+            let time = time * 8.;
+
+            let i = time.floor() as usize;
+            let len = self.transforms.len();
+            self.n = i % len;
+
+            let behind = &self.transforms[self.n];
+            let in_front = &self.transforms[(self.n + 1) % len];
+
+            let interp = time.fract();
+            let transf = transf_lerp(behind, in_front, interp);
+
+            io.add_component(self.ship_ent, &transf);
         }
+    }
+}
+
+fn transf_lerp(a: &Transform, b: &Transform, t: f32) -> Transform {
+    Transform {
+        pos: a.pos.coords.lerp(&b.pos.coords, t).into(),
+        orient: a.orient.slerp(&b.orient, t),
     }
 }
 
