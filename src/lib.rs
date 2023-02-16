@@ -25,11 +25,11 @@ fn orientations(mesh: &Mesh) -> Vec<Transform> {
 
         let to_vect = |i: usize| (Point3::from(axes[i].pos) - origin);
 
-        let x = to_vect(0);
+        let x = -to_vect(0);
         let y = to_vect(2);
         let z = -to_vect(3);
 
-        let mat = Matrix3::from_columns(&[z, y, -x]);
+        let mat = Matrix3::from_columns(&[x, y, -z]);
         let orient = UnitQuaternion::from_matrix(&mat);
 
         transforms.push(Transform {
@@ -124,7 +124,7 @@ impl ServerState {
         //self.n = (self.n + 1) % self.transforms.len();
 
         if let Some(FrameTime { time, .. }) = io.inbox_first() {
-            let time = time * 8.;
+            let time = time * 2.;
 
             let i = time.floor() as usize;
             let len = self.transforms.len();
