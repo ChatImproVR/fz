@@ -1,6 +1,6 @@
 use cimvr_common::{
-    nalgebra::{Matrix3, Point3, Rotation3, UnitQuaternion, Vector3},
-    render::{Mesh, MeshHandle, Primitive, Render, UploadMesh},
+    nalgebra::{Matrix3, Point3, Rotation3, UnitQuaternion, Vector3, Matrix4},
+    render::{Mesh, MeshHandle, Primitive, Render, UploadMesh, CameraComponent},
     FrameTime, Transform,
 };
 use cimvr_engine_interface::{dbg, make_app_state, pkg_namespace, prelude::*, println};
@@ -31,7 +31,7 @@ fn orientations(mesh: &Mesh) -> Vec<Transform> {
         dbg!(x, y, z);
 
 
-        let mat = Matrix3::from_columns(&[x, y, z]);
+        let mat = Matrix3::from_columns(&[z, y, -x]);
         let orient = UnitQuaternion::from_matrix(&mat);
 
         transforms.push(Transform {
@@ -77,6 +77,10 @@ impl UserState for ServerState {
         io.add_component(ship_ent, &Transform::identity());
         io.add_component(ship_ent, &Render::new(SHIP_RDR).primitive(Primitive::Lines));
         io.add_component(ship_ent, &Synchronized);
+        io.add_component(ship_ent, &CameraComponent {
+            clear_color: [0.; 3],
+            projection: [Matrix4::new_perspective(1., 1.3, 0.001, 1000.); 2]
+        });
 
         let env_ent = io.create_entity();
         io.add_component(env_ent, &Transform::identity());
@@ -108,7 +112,7 @@ impl ServerState {
         //self.n = (self.n + 1) % self.transforms.len();
 
         if let Some(FrameTime { time, .. }) = io.inbox_first() {
-            let time = time * 8.;
+            let time = time * 2.;
 
             let i = time.floor() as usize;
             let len = self.transforms.len();
