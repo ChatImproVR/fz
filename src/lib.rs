@@ -1,7 +1,7 @@
 use cimvr_common::{
-    nalgebra::{Point3, UnitQuaternion},
+    nalgebra::{Matrix3, Point3, Rotation3, UnitQuaternion, Vector3},
     render::{Mesh, MeshHandle, Primitive, Render, UploadMesh},
-    Transform, FrameTime,
+    FrameTime, Transform,
 };
 use cimvr_engine_interface::{dbg, make_app_state, pkg_namespace, prelude::*, println};
 
@@ -20,10 +20,23 @@ fn orientations(mesh: &Mesh) -> Vec<Transform> {
     let mut transforms = vec![];
 
     for axes in mesh.vertices.chunks_exact(4) {
-        let origin = Point3::from(axes[0].pos);
+        let origin = Point3::from(axes[1].pos);
+
+        let to_vect = |i: usize| (Point3::from(axes[i].pos) - origin);
+
+        let x = to_vect(0);
+        let y = to_vect(2);
+        let z = -to_vect(3);
+
+        dbg!(x, y, z);
+
+
+        let mat = Matrix3::from_columns(&[x, y, z]);
+        let orient = UnitQuaternion::from_matrix(&mat);
+
         transforms.push(Transform {
             pos: origin,
-            orient: UnitQuaternion::identity(),
+            orient,
         })
     }
 
@@ -76,7 +89,10 @@ impl UserState for ServerState {
         let path_mesh = obj_lines_to_mesh(include_str!("assets/path.obj"));
         let transforms = orientations(&path_mesh);
 
-        sched.add_system(Self::update, SystemDescriptor::new(Stage::Update).subscribe::<FrameTime>());
+        sched.add_system(
+            Self::update,
+            SystemDescriptor::new(Stage::Update).subscribe::<FrameTime>(),
+        );
 
         println!("Hello, server!");
         Self {
@@ -92,11 +108,10 @@ impl ServerState {
         //self.n = (self.n + 1) % self.transforms.len();
 
         if let Some(FrameTime { time, .. }) = io.inbox_first() {
-            let i = (time * 1.) as usize;
+            let i = (time * 8.) as usize;
             self.n = i % self.transforms.len();
             io.add_component(self.ship_ent, &self.transforms[self.n]);
         }
-
     }
 }
 

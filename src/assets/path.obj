@@ -1,7 +1,7 @@
 # Blender 3.4.1
 # www.blender.org
 mtllib path.mtl
-o Orient
+o Path
 v -13.043665 -0.135719 -0.006957
 v -14.043640 -0.135719 0.000000
 v -14.044206 0.853052 -0.149437
