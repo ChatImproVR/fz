@@ -1,6 +1,5 @@
 use cimvr_common::render::{Mesh, Vertex};
-use cimvr_engine_interface::{dbg, prelude::*};
-use std::{io::Read, str::FromStr, collections::{HashSet, HashMap}};
+
 
 /// Read OBJ lines into the mesh
 pub fn obj_lines_to_mesh(obj: &str) -> Mesh {

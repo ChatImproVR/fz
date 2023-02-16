@@ -1,9 +1,9 @@
 use cimvr_common::{
-    nalgebra::{Matrix3, Point3, Rotation3, UnitQuaternion, Vector3, Matrix4},
+    nalgebra::{Matrix3, Point3, UnitQuaternion, Matrix4},
     render::{Mesh, MeshHandle, Primitive, Render, UploadMesh, CameraComponent, Vertex},
     FrameTime, Transform,
 };
-use cimvr_engine_interface::{dbg, make_app_state, pkg_namespace, prelude::*, println};
+use cimvr_engine_interface::{make_app_state, pkg_namespace, prelude::*, println};
 
 use crate::obj::obj_lines_to_mesh;
 
@@ -120,7 +120,7 @@ impl UserState for ServerState {
 }
 
 impl ServerState {
-    fn update(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
+    fn update(&mut self, io: &mut EngineIo, _query: &mut QueryResult) {
         //self.n = (self.n + 1) % self.transforms.len();
 
         if let Some(FrameTime { time, .. }) = io.inbox_first() {
