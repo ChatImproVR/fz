@@ -2,19 +2,6 @@ use cimvr_common::render::{Mesh, Vertex};
 use cimvr_engine_interface::{dbg, prelude::*};
 use std::{io::Read, str::FromStr, collections::{HashSet, HashMap}};
 
-pub fn multi_obj(obj: &str) -> HashMap<String, Mesh> {
-    let mut map = HashMap::new();
-    for sec in obj.split("o ") {
-        let (name, rest) = sec.split_once('\n').unwrap();
-
-        let mesh = obj_lines_to_mesh(rest);
-
-        map.insert(name.to_owned(), mesh);
-    }
-
-    map
-}
-
 /// Read OBJ lines into the mesh
 pub fn obj_lines_to_mesh(obj: &str) -> Mesh {
     let mut m = Mesh::new();
