@@ -1,5 +1,5 @@
 use cimvr_common::{
-    nalgebra::{Matrix3, Point3, UnitQuaternion, Matrix4},
+    nalgebra::{Matrix3, Point3, UnitQuaternion, Matrix4, Isometry3},
     render::{Mesh, MeshHandle, Primitive, Render, UploadMesh, CameraComponent, Vertex},
     FrameTime, Transform,
 };
@@ -130,8 +130,8 @@ impl ServerState {
             let len = self.transforms.len();
             self.n = i % len;
 
-            let behind = &self.transforms[self.n];
-            let in_front = &self.transforms[(self.n + 1) % len];
+            let behind = self.transforms[self.n];
+            let in_front = self.transforms[(self.n + 1) % len];
 
             let interp = time.fract();
             let transf = transf_lerp(behind, in_front, interp);
@@ -141,11 +141,10 @@ impl ServerState {
     }
 }
 
-fn transf_lerp(a: &Transform, b: &Transform, t: f32) -> Transform {
-    Transform {
-        pos: a.pos.coords.lerp(&b.pos.coords, t).into(),
-        orient: a.orient.slerp(&b.orient, t),
-    }
+fn transf_lerp(a: Transform, b: Transform, t: f32) -> Transform {
+    let a: Isometry3<f32> = a.into();
+    let b: Isometry3<f32> = b.into();
+    a.lerp_slerp(&b, t).into()
 }
 
 // Defines entry points for the engine to hook into.
