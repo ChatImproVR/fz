@@ -97,7 +97,7 @@ impl UserState for ServerState {
         io.add_component(env_ent, &Synchronized);
 
         let floor_ent = io.create_entity();
-        io.add_component(floor_ent, &Transform::identity());
+        io.add_component(floor_ent, &Transform::new().with_position(Point3::new(0., -50., 0.)));
         io.add_component(
             floor_ent,
             &Render::new(FLOOR_RDR).primitive(Primitive::Lines),
@@ -160,26 +160,23 @@ fn grid_mesh(n: i32, scale: f32) -> Mesh {
     let mut m = Mesh::new();
 
     let color = [0., 1., 0.];
-    let z = -50.;
+
+    let width = n as f32 * scale;
 
     for i in -n..=n {
-        let a = [i as f32 * scale, z, n as f32 * scale];
-        let b = [i as f32 * scale, z, -n as f32 * scale];
+        let j = i as f32 * scale;
 
-        m.indices.push(m.vertices.len() as u32);
-        m.vertices.push(Vertex::new(a, color));
+        let positions = [
+            [j, 0.0, width],
+            [j, 0.0, -width],
+            [width, 0.0, j],
+            [-width, 0.0, j],
+        ];
 
-        m.indices.push(m.vertices.len() as u32);
-        m.vertices.push(Vertex::new(b, color));
-
-        let a = [n as f32 * scale, z, i as f32 * scale];
-        let b = [-n as f32 * scale, z, i as f32 * scale];
-
-        m.indices.push(m.vertices.len() as u32);
-        m.vertices.push(Vertex::new(a, color));
-
-        m.indices.push(m.vertices.len() as u32);
-        m.vertices.push(Vertex::new(b, color));
+        for pos in positions {
+            let idx = m.push_vertex(Vertex::new(pos, color));
+            m.indices.push(idx);
+        }
     }
 
     m
