@@ -1,7 +1,7 @@
 use cimvr_common::{
     nalgebra::{Matrix3, Point3, UnitQuaternion, Matrix4, Isometry3},
     render::{Mesh, MeshHandle, Primitive, Render, UploadMesh, CameraComponent, Vertex},
-    FrameTime, Transform,
+    FrameTime, Transform, utils::camera::Perspective, vr::VrUpdate, desktop::InputEvents,
 };
 use cimvr_engine_interface::{make_app_state, pkg_namespace, prelude::*, println};
 
@@ -10,7 +10,9 @@ use crate::obj::obj_lines_to_mesh;
 mod obj;
 
 // All state associated with client-side behaviour
-struct ClientState;
+struct ClientState {
+    proj: Perspective,
+}
 
 pub const SHIP_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Ship"));
 pub const PATH_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Path"));
@@ -46,7 +48,7 @@ fn orientations(mesh: &Mesh) -> Vec<Transform> {
 
 impl UserState for ClientState {
     // Implement a constructor
-    fn new(io: &mut EngineIo, _sched: &mut EngineSchedule<Self>) -> Self {
+    fn new(io: &mut EngineIo, sched: &mut EngineSchedule<Self>) -> Self {
         //let mesh = obj_lines_to_mesh(include_str!("assets/ship.obj"));
         let environment_mesh = obj_lines_to_mesh(include_str!("assets/environment.obj"));
         io.send(&UploadMesh {
@@ -65,7 +67,44 @@ impl UserState for ClientState {
             id: SHIP_RDR,
         });
 
-        Self
+        sched.add_system(
+            Self::camera,
+            SystemDescriptor::new(Stage::PreUpdate)
+                .subscribe::<InputEvents>()
+                .subscribe::<VrUpdate>()
+                .query::<CameraComponent>(Access::Write),
+        );
+
+
+        Self {
+            proj: Perspective::new(),
+        }
+    }
+}
+
+impl ClientState {
+    fn camera(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
+        if let Some(input) = io.inbox_first::<InputEvents>() {
+            self.proj.handle_input_events(&input);
+        }
+
+        if let Some(update) = io.inbox_first::<VrUpdate>() {
+            self.proj.handle_vr_update(&update);
+        }
+
+        let projection = self.proj.matrices();
+        self.proj.fov = 79_f32.to_radians();
+        let clear_color = [0.; 3];
+
+        for key in query.iter() {
+            query.write::<CameraComponent>(
+                key,
+                &CameraComponent {
+                    clear_color,
+                    projection,
+                },
+            );
+        }
     }
 }
 
@@ -79,15 +118,16 @@ struct ServerState {
 impl UserState for ServerState {
     // Implement a constructor
     fn new(io: &mut EngineIo, sched: &mut EngineSchedule<Self>) -> Self {
+        // Add ship
         let ship_ent = io.create_entity();
         io.add_component(ship_ent, &Transform::identity());
         //io.add_component(ship_ent, &Render::new(SHIP_RDR).primitive(Primitive::Lines));
         io.add_component(ship_ent, &Synchronized);
-        io.add_component(ship_ent, &CameraComponent {
-            clear_color: [0.; 3],
-            projection: [Matrix4::new_perspective(2., 1.3, 0.001, 1000.); 2]
-        });
+        io.add_component(ship_ent, &CameraComponent::default());
 
+        // Add camera
+
+        // Add environment
         let env_ent = io.create_entity();
         io.add_component(env_ent, &Transform::identity());
         io.add_component(
@@ -96,6 +136,7 @@ impl UserState for ServerState {
         );
         io.add_component(env_ent, &Synchronized);
 
+        // Add floor
         let floor_ent = io.create_entity();
         io.add_component(floor_ent, &Transform::new().with_position(Point3::new(0., -50., 0.)));
         io.add_component(
@@ -104,16 +145,16 @@ impl UserState for ServerState {
         );
         io.add_component(floor_ent, &Synchronized);
 
-
+        // Parse path mesh
         let path_mesh = obj_lines_to_mesh(include_str!("assets/path.obj"));
         let transforms = orientations(&path_mesh);
 
+        // Add update system
         sched.add_system(
             Self::update,
             SystemDescriptor::new(Stage::Update).subscribe::<FrameTime>(),
         );
 
-        println!("Hello, server!");
         Self {
             n: 0,
             transforms,
