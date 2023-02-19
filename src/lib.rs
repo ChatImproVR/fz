@@ -1,3 +1,5 @@
+use std::f32::consts::FRAC_PI_2;
+
 use cimvr_common::{
     desktop::InputEvents,
     nalgebra::{Isometry3, Matrix3, Matrix4, Point3, UnitQuaternion, Vector2, Point2},
@@ -6,7 +8,7 @@ use cimvr_common::{
     vr::VrUpdate,
     FrameTime, Transform,
 };
-use cimvr_engine_interface::{make_app_state, pkg_namespace, prelude::*, println};
+use cimvr_engine_interface::{make_app_state, pkg_namespace, dbg, prelude::*, println};
 
 use crate::obj::obj_lines_to_mesh;
 
@@ -37,7 +39,7 @@ fn orientations(mesh: &Mesh) -> Vec<Transform> {
         let y = to_vect(2);
         let z = -to_vect(3);
 
-        let mat = Matrix3::from_columns(&[x, y, -z]);
+        let mat = Matrix3::from_columns(&[-x, y, z]);
         let orient = UnitQuaternion::from_matrix(&mat);
 
         transforms.push(Transform {
@@ -115,6 +117,7 @@ struct ServerState {
     n: usize,
     path: Path,
     ship_ent: EntityId,
+    camera_ent: EntityId,
 }
 
 impl UserState for ServerState {
@@ -125,9 +128,12 @@ impl UserState for ServerState {
         io.add_component(ship_ent, &Transform::identity());
         io.add_component(ship_ent, &Render::new(SHIP_RDR).primitive(Primitive::Lines));
         io.add_component(ship_ent, &Synchronized);
-        //io.add_component(ship_ent, &CameraComponent::default());
 
         // Add camera
+        let camera_ent = io.create_entity();
+        io.add_component(camera_ent, &Transform::identity());
+        io.add_component(camera_ent, &CameraComponent::default());
+        io.add_component(camera_ent, &Synchronized);
 
         // Add environment
         let env_ent = io.create_entity();
@@ -159,6 +165,7 @@ impl UserState for ServerState {
         );
 
         Self {
+            camera_ent,
             n: 0,
             path,
             ship_ent,
@@ -170,8 +177,17 @@ impl ServerState {
     fn update(&mut self, io: &mut EngineIo, _query: &mut QueryResult) {
         if let Some(FrameTime { time, .. }) = io.inbox_first() {
             let time = time * 2.;
-            let transf = self.path.lerp(time);
-            io.add_component(self.ship_ent, &transf);
+            let ship_transf = self.path.lerp(time);
+            io.add_component(self.ship_ent, &ship_transf);
+
+            let cam_pos = Transform::new()
+                .with_rotation(UnitQuaternion::from_euler_angles(0., time / 10., 0.))
+                .with_position(Point3::new(0., 0., 0.));
+
+            let cam_transf = ship_transf * cam_pos;
+            dbg!(cam_transf);
+
+            io.add_component(self.camera_ent, &cam_transf);
         }
     }
 }
