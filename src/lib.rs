@@ -176,16 +176,15 @@ impl UserState for ServerState {
 impl ServerState {
     fn update(&mut self, io: &mut EngineIo, _query: &mut QueryResult) {
         if let Some(FrameTime { time, .. }) = io.inbox_first() {
-            let time = time * 2.;
+            let time = time * 7.;
             let ship_transf = self.path.lerp(time);
             io.add_component(self.ship_ent, &ship_transf);
 
             let cam_pos = Transform::new()
-                .with_rotation(UnitQuaternion::from_euler_angles(0., time / 10., 0.))
-                .with_position(Point3::new(0., 0., 0.));
+                .with_rotation(UnitQuaternion::from_euler_angles(0., -FRAC_PI_2, 0.))
+                .with_position(Point3::new(-13., 2., 0.));
 
             let cam_transf = ship_transf * cam_pos;
-            dbg!(cam_transf);
 
             io.add_component(self.camera_ent, &cam_transf);
         }
