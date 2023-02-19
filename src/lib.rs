@@ -1,7 +1,10 @@
 use cimvr_common::{
-    nalgebra::{Matrix3, Point3, UnitQuaternion, Matrix4, Isometry3},
-    render::{Mesh, MeshHandle, Primitive, Render, UploadMesh, CameraComponent, Vertex},
-    FrameTime, Transform, utils::camera::Perspective, vr::VrUpdate, desktop::InputEvents,
+    desktop::InputEvents,
+    nalgebra::{Isometry3, Matrix3, Matrix4, Point3, UnitQuaternion, Vector2},
+    render::{CameraComponent, Mesh, MeshHandle, Primitive, Render, UploadMesh, Vertex},
+    utils::camera::Perspective,
+    vr::VrUpdate,
+    FrameTime, Transform,
 };
 use cimvr_engine_interface::{make_app_state, pkg_namespace, prelude::*, println};
 
@@ -16,7 +19,7 @@ struct ClientState {
 
 pub const SHIP_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Ship"));
 pub const PATH_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Path"));
-pub const ENVIRONMENT_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Environment"));
+pub const MAP_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Map"));
 pub const FLOOR_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Floor"));
 
 // Need a function which can turn a position in 3D and a previous value, and return a next value
@@ -53,7 +56,7 @@ impl UserState for ClientState {
         let environment_mesh = obj_lines_to_mesh(include_str!("assets/environment.obj"));
         io.send(&UploadMesh {
             mesh: environment_mesh,
-            id: ENVIRONMENT_RDR,
+            id: MAP_RDR,
         });
 
         io.send(&UploadMesh {
@@ -74,7 +77,6 @@ impl UserState for ClientState {
                 .subscribe::<VrUpdate>()
                 .query::<CameraComponent>(Access::Write),
         );
-
 
         Self {
             proj: Perspective::new(),
@@ -111,7 +113,7 @@ impl ClientState {
 // All state associated with server-side behaviour
 struct ServerState {
     n: usize,
-    transforms: Vec<Transform>,
+    path: Path,
     ship_ent: EntityId,
 }
 
@@ -121,24 +123,24 @@ impl UserState for ServerState {
         // Add ship
         let ship_ent = io.create_entity();
         io.add_component(ship_ent, &Transform::identity());
-        //io.add_component(ship_ent, &Render::new(SHIP_RDR).primitive(Primitive::Lines));
+        io.add_component(ship_ent, &Render::new(SHIP_RDR).primitive(Primitive::Lines));
         io.add_component(ship_ent, &Synchronized);
-        io.add_component(ship_ent, &CameraComponent::default());
+        //io.add_component(ship_ent, &CameraComponent::default());
 
         // Add camera
 
         // Add environment
         let env_ent = io.create_entity();
         io.add_component(env_ent, &Transform::identity());
-        io.add_component(
-            env_ent,
-            &Render::new(ENVIRONMENT_RDR).primitive(Primitive::Lines),
-        );
+        io.add_component(env_ent, &Render::new(MAP_RDR).primitive(Primitive::Lines));
         io.add_component(env_ent, &Synchronized);
 
         // Add floor
         let floor_ent = io.create_entity();
-        io.add_component(floor_ent, &Transform::new().with_position(Point3::new(0., -50., 0.)));
+        io.add_component(
+            floor_ent,
+            &Transform::new().with_position(Point3::new(0., -50., 0.)),
+        );
         io.add_component(
             floor_ent,
             &Render::new(FLOOR_RDR).primitive(Primitive::Lines),
@@ -148,6 +150,7 @@ impl UserState for ServerState {
         // Parse path mesh
         let path_mesh = obj_lines_to_mesh(include_str!("assets/path.obj"));
         let transforms = orientations(&path_mesh);
+        let path = Path::new(transforms);
 
         // Add update system
         sched.add_system(
@@ -157,7 +160,7 @@ impl UserState for ServerState {
 
         Self {
             n: 0,
-            transforms,
+            path,
             ship_ent,
         }
     }
@@ -165,26 +168,44 @@ impl UserState for ServerState {
 
 impl ServerState {
     fn update(&mut self, io: &mut EngineIo, _query: &mut QueryResult) {
-        //self.n = (self.n + 1) % self.transforms.len();
-
         if let Some(FrameTime { time, .. }) = io.inbox_first() {
             let time = time * 2.;
-            let transf = curve(&self.transforms, time);
+            let transf = self.path.lerp(time);
             io.add_component(self.ship_ent, &transf);
         }
     }
 }
 
-fn curve(transf: &[Transform], t: f32) -> Transform {
-    // Index part of path position
-    let i = t.floor() as usize;
-    let len = transf.len();
+struct Path {
+    ctrlps: Vec<Transform>,
+}
 
-    let behind = transf[i % len];
-    let in_front = transf[(i + 1) % len];
+impl Path {
+    pub fn new(ctrlps: Vec<Transform>) -> Self {
+        Self { ctrlps }
+    }
 
-    let interp = t.fract();
-    transf_lerp(behind, in_front, interp)
+    fn index(&self, t: f32) -> (usize, usize) {
+        // Index part of path position
+        let i = t.floor() as usize;
+        let len = self.ctrlps.len();
+
+        let behind = i % len;
+        let in_front = (i + 1) % len;
+
+        (behind, in_front)
+    }
+
+    fn lerp(&self, t: f32) -> Transform {
+        let (behind, in_front) = self.index(t);
+        transf_lerp(self.ctrlps[behind], self.ctrlps[in_front], t.fract())
+    }
+
+    /// Returns an index which is approximately `dist` units along the curve from index `t`
+    /// Uses pos2d to determine the path length (e.g. the insides of curves are shortest)
+    fn step_distance(&self, dist: f32, t: f32, pos2d: Vector2<f32>) -> f32 {
+        todo!()
+    }
 }
 
 fn transf_lerp(a: Transform, b: Transform, t: f32) -> Transform {
