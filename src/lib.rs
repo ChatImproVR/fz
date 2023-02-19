@@ -1,6 +1,6 @@
 use cimvr_common::{
     desktop::InputEvents,
-    nalgebra::{Isometry3, Matrix3, Matrix4, Point3, UnitQuaternion, Vector2},
+    nalgebra::{Isometry3, Matrix3, Matrix4, Point3, UnitQuaternion, Vector2, Point2},
     render::{CameraComponent, Mesh, MeshHandle, Primitive, Render, UploadMesh, Vertex},
     utils::camera::Perspective,
     vr::VrUpdate,
@@ -203,8 +203,32 @@ impl Path {
 
     /// Returns an index which is approximately `dist` units along the curve from index `t`
     /// Uses pos2d to determine the path length (e.g. the insides of curves are shortest)
-    fn step_distance(&self, dist: f32, t: f32, pos2d: Vector2<f32>) -> f32 {
-        todo!()
+    fn step_distance(&self, remaining_dist: f32, t: f32, pos2d: Point2<f32>) -> f32 {
+        let mut t = t;
+        /* wip 
+        let mut remaining_dist = remaining_dist;
+
+        fn pos_3d(tf: Transform, pos2d: Point2<f32>) -> Point3<f32> {
+            let iso: Isometry3<f32> = tf.into();
+            let pos3d = Point3::new(0., pos2d.y, pos2d.x);
+            iso.transform_point(&pos3d)
+        }
+
+        while remaining_dist > 0. {
+            let current_orient = self.lerp(t);
+            let (in_front, _) = self.index(t);
+            let current_pos3d = pos_3d(current_orient, pos2d);
+            let front_pos3d = pos_3d(self.ctrlps[in_front], pos2d);
+            let dist = (current_pos3d - front_pos3d).magnitude();
+            if dist <= 0.0 {
+                return t;
+            }
+
+
+        }
+
+        */
+        t
     }
 }
 
