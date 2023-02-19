@@ -6,12 +6,13 @@ use cimvr_common::{
     render::{CameraComponent, Mesh, MeshHandle, Primitive, Render, UploadMesh, Vertex},
     utils::camera::Perspective,
     vr::VrUpdate,
-    FrameTime, Transform,
+    Transform,
 };
-use cimvr_engine_interface::{make_app_state, pkg_namespace, dbg, prelude::*, println};
+use cimvr_engine_interface::{FrameTime, make_app_state, pkg_namespace, dbg, prelude::*, println};
 
 use crate::obj::obj_lines_to_mesh;
 
+mod kinematics;
 mod obj;
 
 // All state associated with client-side behaviour
@@ -77,6 +78,7 @@ impl UserState for ClientState {
             SystemDescriptor::new(Stage::PreUpdate)
                 .subscribe::<InputEvents>()
                 .subscribe::<VrUpdate>()
+                .subscribe::<FrameTime>()
                 .query::<CameraComponent>(Access::Write),
         );
 
@@ -88,6 +90,10 @@ impl UserState for ClientState {
 
 impl ClientState {
     fn camera(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
+        if let Some(FrameTime { delta, time }) = io.inbox_first::<FrameTime>() {
+            //dbg!(delta);
+        }
+
         if let Some(input) = io.inbox_first::<InputEvents>() {
             self.proj.handle_input_events(&input);
         }
@@ -175,7 +181,8 @@ impl UserState for ServerState {
 
 impl ServerState {
     fn update(&mut self, io: &mut EngineIo, _query: &mut QueryResult) {
-        if let Some(FrameTime { time, .. }) = io.inbox_first() {
+        if let Some(FrameTime { time, delta }) = io.inbox_first() {
+            //dbg!(delta);
             let time = time * 7.;
             let ship_transf = self.path.lerp(time);
             io.add_component(self.ship_ent, &ship_transf);
