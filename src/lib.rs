@@ -21,7 +21,6 @@ struct ClientState {
 }
 
 pub const SHIP_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Ship"));
-pub const PATH_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Path"));
 pub const MAP_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Map"));
 pub const FLOOR_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Floor"));
 
