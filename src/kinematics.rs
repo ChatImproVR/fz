@@ -6,10 +6,10 @@ use serde::{Deserialize, Serialize};
 /// Component for objects simulated with the kinematics system
 #[derive(Serialize, Deserialize, Copy, Clone, Debug, PartialEq)]
 pub struct KinematicPhysics {
-    /// The mass of this object
-    pub mass: f32,
     /// Velocity
     pub vel: Vector3<f32>,
+    /// The mass of this object
+    pub mass: f32,
 }
 
 impl KinematicPhysics {
@@ -30,13 +30,19 @@ impl KinematicPhysics {
 pub fn simulate(query: &mut QueryResult, dt: f32) {
     for key in query.iter() {
         let kine = query.read::<KinematicPhysics>(key);
-        query.modify::<Transform>(key, |t| t.pos += kine.vel)
+        query.modify::<Transform>(key, |t| t.pos += kine.vel * dt)
+    }
+}
+
+pub fn gravity(query: &mut QueryResult, dt: f32, g: Vector3<f32>) {
+    for key in query.iter() {
+        query.modify::<KinematicPhysics>(key, |k| k.vel += dt * g);
     }
 }
 
 impl Component for KinematicPhysics {
     const ID: ComponentIdStatic = ComponentIdStatic {
         id: pkg_namespace!("KinematicPhysics"),
-        size: 16,
+        size: 24,
     };
 }

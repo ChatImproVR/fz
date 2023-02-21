@@ -2,13 +2,14 @@ use std::f32::consts::FRAC_PI_2;
 
 use cimvr_common::{
     desktop::InputEvents,
-    nalgebra::{Isometry3, Matrix3, Matrix4, Point3, UnitQuaternion, Vector2, Point2},
+    nalgebra::{Isometry3, Matrix3, Matrix4, Point2, Point3, UnitQuaternion, Vector2, Vector3},
     render::{CameraComponent, Mesh, MeshHandle, Primitive, Render, UploadMesh, Vertex},
     utils::camera::Perspective,
     vr::VrUpdate,
     Transform,
 };
-use cimvr_engine_interface::{FrameTime, make_app_state, pkg_namespace, dbg, prelude::*, println};
+use cimvr_engine_interface::{dbg, make_app_state, pkg_namespace, prelude::*, println, FrameTime};
+use kinematics::KinematicPhysics;
 
 use crate::obj::obj_lines_to_mesh;
 
@@ -125,6 +126,15 @@ struct ServerState {
     camera_ent: EntityId,
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Copy, Clone)]
+struct ShipComponent;
+impl Component for ShipComponent {
+    const ID: ComponentIdStatic = ComponentIdStatic {
+        id: pkg_namespace!("Ship"),
+        size: 0,
+    };
+}
+
 impl UserState for ServerState {
     // Implement a constructor
     fn new(io: &mut EngineIo, sched: &mut EngineSchedule<Self>) -> Self {
@@ -133,6 +143,11 @@ impl UserState for ServerState {
         io.add_component(ship_ent, &Transform::identity());
         io.add_component(ship_ent, &Render::new(SHIP_RDR).primitive(Primitive::Lines));
         io.add_component(ship_ent, &Synchronized);
+        io.add_component(ship_ent, &ShipComponent);
+        io.add_component(ship_ent, &KinematicPhysics {
+            vel: Vector3::new(1., 1., 1.),
+            mass: 1.,
+        });
 
         // Add camera
         let camera_ent = io.create_entity();
@@ -163,10 +178,24 @@ impl UserState for ServerState {
         let transforms = orientations(&path_mesh);
         let path = Path::new(transforms);
 
-        // Add update system
+        // Add systems
         sched.add_system(
-            Self::update,
-            SystemDescriptor::new(Stage::Update).subscribe::<FrameTime>(),
+            Self::camera_update,
+            SystemDescriptor::new(Stage::Update)
+                .query::<Transform>(Access::Read)
+                // Here we're using the ShipComponent as a filter, so the engine doesn't have to
+                // send us a tone of data! We DON'T have to use a component to set the camera's
+                // position, because we can abuse add_component()... 
+                .query::<ShipComponent>(Access::Read)
+                .subscribe::<FrameTime>(),
+        );
+
+        sched.add_system(
+            Self::kinematics_update,
+            SystemDescriptor::new(Stage::Update)
+                .query::<Transform>(Access::Write)
+                .query::<KinematicPhysics>(Access::Read)
+                .subscribe::<FrameTime>(),
         );
 
         Self {
@@ -179,21 +208,31 @@ impl UserState for ServerState {
 }
 
 impl ServerState {
-    fn update(&mut self, io: &mut EngineIo, _query: &mut QueryResult) {
-        if let Some(FrameTime { time, delta }) = io.inbox_first() {
-            //dbg!(delta);
-            let time = time * 7.;
-            let ship_transf = self.path.lerp(time);
-            io.add_component(self.ship_ent, &ship_transf);
-
-            let cam_pos = Transform::new()
-                .with_rotation(UnitQuaternion::from_euler_angles(0., -FRAC_PI_2, 0.))
-                .with_position(Point3::new(-13., 2., 0.));
-
-            let cam_transf = ship_transf * cam_pos;
-
-            io.add_component(self.camera_ent, &cam_transf);
+    fn kinematics_update(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
+        if let Some(FrameTime { delta, .. }) = io.inbox_first() {
+            let physics_dt = delta;
+            kinematics::simulate(query, physics_dt);
+        } else {
+            println!("Expected FrameTime message!");
         }
+    }
+
+    fn camera_update(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
+        let ship_key = query.key_for_entity(self.ship_ent).unwrap();
+        let ship_transf: Transform = query.read(ship_key);
+
+        //dbg!(delta);
+        //let time = time * 7.;
+        //let ship_transf = self.path.lerp(time);
+        //io.add_component(self.ship_ent, &ship_transf);
+
+        let cam_pos = Transform::new()
+            .with_rotation(UnitQuaternion::from_euler_angles(0., -FRAC_PI_2, 0.))
+            .with_position(Point3::new(-13., 2., 0.));
+
+        let cam_transf = ship_transf * cam_pos;
+
+        io.add_component(self.camera_ent, &cam_transf);
     }
 }
 
@@ -226,7 +265,7 @@ impl Path {
     /// Uses pos2d to determine the path length (e.g. the insides of curves are shortest)
     fn step_distance(&self, remaining_dist: f32, t: f32, pos2d: Point2<f32>) -> f32 {
         let mut t = t;
-        /* wip 
+        /* wip
         let mut remaining_dist = remaining_dist;
 
         fn pos_3d(tf: Transform, pos2d: Point2<f32>) -> Point3<f32> {
