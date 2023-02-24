@@ -144,10 +144,13 @@ impl UserState for ServerState {
         io.add_component(ship_ent, &Render::new(SHIP_RDR).primitive(Primitive::Lines));
         io.add_component(ship_ent, &Synchronized);
         io.add_component(ship_ent, &ShipComponent);
-        io.add_component(ship_ent, &KinematicPhysics {
-            vel: Vector3::new(1., 1., 1.),
-            mass: 1.,
-        });
+        io.add_component(
+            ship_ent,
+            &KinematicPhysics {
+                vel: Vector3::new(1., 1., 1.),
+                mass: 1.,
+            },
+        );
 
         // Add camera
         let camera_ent = io.create_entity();
@@ -185,7 +188,7 @@ impl UserState for ServerState {
                 .query::<Transform>(Access::Read)
                 // Here we're using the ShipComponent as a filter, so the engine doesn't have to
                 // send us a tone of data! We DON'T have to use a component to set the camera's
-                // position, because we can abuse add_component()... 
+                // position, because we can abuse add_component()...
                 .query::<ShipComponent>(Access::Read)
                 .subscribe::<FrameTime>(),
         );
@@ -210,8 +213,15 @@ impl UserState for ServerState {
 impl ServerState {
     fn kinematics_update(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
         if let Some(FrameTime { delta, .. }) = io.inbox_first() {
-            let physics_dt = delta;
-            kinematics::simulate(query, physics_dt);
+            let dt = delta;
+
+            let ship_key = query.key_for_entity(self.ship_ent).unwrap();
+            query.modify::<KinematicPhysics>(ship_key, |k| {
+                k.force(Vector3::new(10., 0., 0.) * dt)
+            });
+
+            kinematics::gravity(query, dt, Vector3::new(0., -0.5, 0.));
+            kinematics::simulate(query, dt);
         } else {
             println!("Expected FrameTime message!");
         }
