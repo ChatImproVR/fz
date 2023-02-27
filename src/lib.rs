@@ -2,11 +2,12 @@ use std::f32::consts::FRAC_PI_2;
 
 use cimvr_common::{
     desktop::InputEvents,
+    gamepad::{Axis, GamepadState},
     nalgebra::{Isometry3, Matrix3, Matrix4, Point2, Point3, UnitQuaternion, Vector2, Vector3},
     render::{CameraComponent, Mesh, MeshHandle, Primitive, Render, UploadMesh, Vertex},
     utils::camera::Perspective,
     vr::VrUpdate,
-    Transform, gamepad::{GamepadState, Axis},
+    Transform,
 };
 use cimvr_engine_interface::{dbg, make_app_state, pkg_namespace, prelude::*, println, FrameTime};
 use kinematics::KinematicPhysics;
@@ -29,7 +30,7 @@ pub const FLOOR_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Floor"));
 // Need a function which can turn a position in 3D and a previous value, and return a next value
 // This value correspondss to the curve interpolation over the whole shibam
 
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, Copy)]
 struct InputAbstraction {
     /// Desired pitching power
     pitch: f32,
@@ -97,8 +98,7 @@ impl UserState for ClientState {
 
         sched.add_system(
             Self::controller_input,
-            SystemDescriptor::new(Stage::PreUpdate)
-                .subscribe::<GamepadState>()
+            SystemDescriptor::new(Stage::PreUpdate).subscribe::<GamepadState>(),
         );
 
         Self {
@@ -137,10 +137,10 @@ impl ClientState {
 
         if let Some(GamepadState(gamepads)) = io.inbox_first() {
             if let Some(gamepad) = gamepads.into_iter().next() {
-                 input.yaw = gamepad.axes[&Axis::LeftStickX];
-                 input.pitch = gamepad.axes[&Axis::LeftStickY];
-                 input.roll = gamepad.axes[&Axis::RightStickX];
-                 input.throttle = gamepad.axes[&Axis::RightZ]; 
+                input.yaw = gamepad.axes[&Axis::LeftStickX];
+                input.pitch = gamepad.axes[&Axis::LeftStickY];
+                input.roll = gamepad.axes[&Axis::RightStickX];
+                input.throttle = gamepad.axes[&Axis::RightZ];
             }
         }
 
@@ -154,8 +154,10 @@ impl ClientState {
 struct ServerState {
     n: usize,
     path: Path,
+    ship: ShipCharacteristics,
     ship_ent: EntityId,
     camera_ent: EntityId,
+    last_input_state: InputAbstraction,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Copy, Clone)]
@@ -216,6 +218,12 @@ impl UserState for ServerState {
         let path = Path::new(transforms);
 
         sched.add_system(
+            Self::input_update,
+            SystemDescriptor::new(Stage::PreUpdate)
+                .subscribe::<InputAbstraction>()
+        );
+
+        sched.add_system(
             Self::kinematics_update,
             SystemDescriptor::new(Stage::Update)
                 .query::<Transform>(Access::Write)
@@ -236,8 +244,17 @@ impl UserState for ServerState {
                 .subscribe::<FrameTime>(),
         );
 
+        let ship = ShipCharacteristics {
+            mass: 1000.,
+            moment: 1000. * 3_f32.powi(2),
+            max_angular_impulse: 3.,
+            max_thrust: 3.,
+        };
+
         Self {
             camera_ent,
+            last_input_state: InputAbstraction::default(),
+            ship,
             n: 0,
             path,
             ship_ent,
@@ -245,38 +262,57 @@ impl UserState for ServerState {
     }
 }
 
+#[derive(Clone, Default, Copy)]
 struct ShipCharacteristics {
     /// Mass of the ship (Kg)
     mass: f32,
     /// Ship's moment of inertia (Kg * m^2)
     moment: f32,
     /// Maximum rotational torque power (Newton-meters)
-    max_torque: f32,
+    max_angular_impulse: f32,
     /// Maximum thrust (Newtons)
     max_thrust: f32,
 }
 
-fn ship_controller(dt: f32, ship: ShipCharacteristics, input: InputAbstraction, kine: &mut KinematicPhysics) {
+fn ship_controller(
+    dt: f32,
+    ship: ShipCharacteristics,
+    input: InputAbstraction,
+    tf: Transform,
+    kt: &mut KinematicPhysics,
+) {
+    // Rotation damping
+    kt.torque(dt * -kt.ang_vel * 0.99);
+
+    let control = Vector3::new(input.roll, -input.yaw, -input.pitch);
+    kt.torque(tf.orient.inverse() * control * ship.max_angular_impulse * dt);
 }
 
 impl ServerState {
+    fn input_update(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
+        for input in io.inbox::<InputAbstraction>() {
+            self.last_input_state = input
+        }
+    }
+
     fn kinematics_update(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
         if let Some(FrameTime { delta, .. }) = io.inbox_first() {
             let dt = delta;
 
             let gravity = Vector3::new(0., -0.5, 0.);
 
-            let tf: Isometry3<f32> = query.read::<Transform>(self.ship_ent).into();
+            let tf = query.read::<Transform>(self.ship_ent);
             query.modify::<KinematicPhysics>(self.ship_ent, |k| {
                 //let diff = Vector3::zeros() - tf.translation.vector;
                 //k.force(diff.magnitude() * diff / 1000.);
-                k.torque(Vector3::new(0., 0.1, 0.) * dt);
+                //k.torque(Vector3::new(0., 0.1, 0.) * dt);
 
                 // Antigravity drive :)
                 k.force(-gravity * dt);
 
-                let w = k.ang_vel;
-                k.force(tf.rotation * Vector3::new(10., 0., 0.) * dt * w.magnitude_squared());
+                ship_controller(dt, self.ship, self.last_input_state, tf, k)
+
+                //k.force(tf.rotation * Vector3::new(10., 0., 0.) * dt * w.magnitude_squared());
             });
 
             //query.modify::<Transform>(ship_key, |t| t.pos = (t.pos / 100.).map(|x| x.fract()));
@@ -404,4 +440,3 @@ impl Message for InputAbstraction {
         locality: Locality::Remote,
     };
 }
-
