@@ -224,10 +224,12 @@ impl ServerState {
             query.modify::<KinematicPhysics>(self.ship_ent, |k| {
                 //let diff = Vector3::zeros() - tf.translation.vector;
                 //k.force(diff.magnitude() * diff / 1000.);
-                k.torque(Vector3::new(0., 10., 0.) * dt);
+                k.torque(Vector3::new(0., 0.01, 0.) * dt);
 
                 // Antigravity drive :)
                 k.force(-gravity * dt);
+
+                k.force(tf.rotation * Vector3::new(1., 0., 0.) * dt);
             });
 
             //query.modify::<Transform>(ship_key, |t| t.pos = (t.pos / 100.).map(|x| x.fract()));
