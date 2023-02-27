@@ -6,10 +6,11 @@ use cimvr_common::{
     render::{CameraComponent, Mesh, MeshHandle, Primitive, Render, UploadMesh, Vertex},
     utils::camera::Perspective,
     vr::VrUpdate,
-    Transform,
+    Transform, gamepad::{GamepadState, Axis},
 };
 use cimvr_engine_interface::{dbg, make_app_state, pkg_namespace, prelude::*, println, FrameTime};
 use kinematics::KinematicPhysics;
+use serde::{Deserialize, Serialize};
 
 use crate::obj::obj_lines_to_mesh;
 
@@ -27,6 +28,18 @@ pub const FLOOR_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Floor"));
 
 // Need a function which can turn a position in 3D and a previous value, and return a next value
 // This value correspondss to the curve interpolation over the whole shibam
+
+#[derive(Serialize, Deserialize, Debug, Default)]
+struct InputAbstraction {
+    /// Desired pitching power
+    pitch: f32,
+    /// Desired yaw power
+    yaw: f32,
+    /// Desired roll power
+    roll: f32,
+    /// Desired thrust
+    throttle: f32,
+}
 
 fn orientations(mesh: &Mesh) -> Vec<Transform> {
     let mut transforms = vec![];
@@ -82,6 +95,12 @@ impl UserState for ClientState {
                 .query::<CameraComponent>(Access::Write),
         );
 
+        sched.add_system(
+            Self::controller_input,
+            SystemDescriptor::new(Stage::PreUpdate)
+                .subscribe::<GamepadState>()
+        );
+
         Self {
             proj: Perspective::new(),
         }
@@ -90,10 +109,6 @@ impl UserState for ClientState {
 
 impl ClientState {
     fn camera(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
-        if let Some(FrameTime { delta, time }) = io.inbox_first::<FrameTime>() {
-            //dbg!(delta);
-        }
-
         if let Some(input) = io.inbox_first::<InputEvents>() {
             self.proj.handle_input_events(&input);
         }
@@ -115,6 +130,23 @@ impl ClientState {
                 },
             );
         }
+    }
+
+    fn controller_input(&mut self, io: &mut EngineIo, _query: &mut QueryResult) {
+        let mut input = InputAbstraction::default();
+
+        if let Some(GamepadState(gamepads)) = io.inbox_first() {
+            if let Some(gamepad) = gamepads.into_iter().next() {
+                 input.yaw = gamepad.axes[&Axis::LeftStickX];
+                 input.pitch = gamepad.axes[&Axis::LeftStickY];
+                 input.roll = gamepad.axes[&Axis::RightStickX];
+                 input.throttle = gamepad.axes[&Axis::RightZ]; 
+            }
+        }
+
+        dbg!(&input);
+
+        io.send(&input);
     }
 }
 
@@ -211,17 +243,6 @@ impl UserState for ServerState {
             ship_ent,
         }
     }
-}
-
-struct InputAbstraction {
-    /// Desired pitching power
-    pitch: f32,
-    /// Desired yaw power
-    yaw: f32,
-    /// Desired roll power
-    roll: f32,
-    /// Desired thrust
-    throttle: f32,
 }
 
 struct ShipCharacteristics {
@@ -376,3 +397,11 @@ fn grid_mesh(n: i32, scale: f32) -> Mesh {
 
     m
 }
+
+impl Message for InputAbstraction {
+    const CHANNEL: ChannelIdStatic = ChannelIdStatic {
+        id: pkg_namespace!("InputAbstraction"),
+        locality: Locality::Remote,
+    };
+}
+
