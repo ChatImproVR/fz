@@ -147,8 +147,10 @@ impl UserState for ServerState {
         io.add_component(
             ship_ent,
             &KinematicPhysics {
-                vel: Vector3::new(1., 1., 1.),
+                vel: Vector3::zeros(),
                 mass: 1.,
+                ang_vel: Vector3::zeros(),
+                moment: 1.,
             },
         );
 
@@ -181,7 +183,16 @@ impl UserState for ServerState {
         let transforms = orientations(&path_mesh);
         let path = Path::new(transforms);
 
-        // Add systems
+        sched.add_system(
+            Self::kinematics_update,
+            SystemDescriptor::new(Stage::Update)
+                .query::<Transform>(Access::Write)
+                .query::<KinematicPhysics>(Access::Read)
+                .subscribe::<FrameTime>(),
+        );
+
+        // NOTE: Camera update happens after kinematics update so it doesn't lag behind in quick
+        // action!
         sched.add_system(
             Self::camera_update,
             SystemDescriptor::new(Stage::Update)
@@ -190,14 +201,6 @@ impl UserState for ServerState {
                 // send us a tone of data! We DON'T have to use a component to set the camera's
                 // position, because we can abuse add_component()...
                 .query::<ShipComponent>(Access::Read)
-                .subscribe::<FrameTime>(),
-        );
-
-        sched.add_system(
-            Self::kinematics_update,
-            SystemDescriptor::new(Stage::Update)
-                .query::<Transform>(Access::Write)
-                .query::<KinematicPhysics>(Access::Read)
                 .subscribe::<FrameTime>(),
         );
 
@@ -215,13 +218,21 @@ impl ServerState {
         if let Some(FrameTime { delta, .. }) = io.inbox_first() {
             let dt = delta;
 
+            let gravity = Vector3::new(0., -0.5, 0.);
+
+            let tf: Isometry3<f32> = query.read::<Transform>(self.ship_ent).into();
             query.modify::<KinematicPhysics>(self.ship_ent, |k| {
-                k.force(Vector3::new(10., 0., 0.) * dt)
+                //let diff = Vector3::zeros() - tf.translation.vector;
+                //k.force(diff.magnitude() * diff / 1000.);
+                k.torque(Vector3::new(0., 10., 0.) * dt);
+
+                // Antigravity drive :)
+                k.force(-gravity * dt);
             });
 
             //query.modify::<Transform>(ship_key, |t| t.pos = (t.pos / 100.).map(|x| x.fract()));
 
-            kinematics::gravity(query, dt, Vector3::new(0., -0.5, 0.));
+            kinematics::gravity(query, dt, gravity);
             kinematics::simulate(query, dt);
         } else {
             println!("Expected FrameTime message!");
