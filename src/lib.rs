@@ -140,7 +140,7 @@ impl ClientState {
                 input.yaw = gamepad.axes[&Axis::LeftStickX];
                 input.pitch = gamepad.axes[&Axis::LeftStickY];
                 input.roll = gamepad.axes[&Axis::RightStickX];
-                input.throttle = gamepad.axes[&Axis::RightZ];
+                input.throttle = gamepad.axes[&Axis::RightStickY];
             }
         }
 
@@ -245,8 +245,8 @@ impl UserState for ServerState {
         let ship = ShipCharacteristics {
             mass: 1000.,
             moment: 1000. * 3_f32.powi(2),
-            max_angular_impulse: 10.,
-            max_thrust: 3.,
+            max_angular_impulse: 50.,
+            max_impulse: 30.,
         };
 
         Self {
@@ -269,7 +269,7 @@ struct ShipCharacteristics {
     /// Maximum rotational torque power (Newton-meters)
     max_angular_impulse: f32,
     /// Maximum thrust (Newtons)
-    max_thrust: f32,
+    max_impulse: f32,
 }
 
 fn ship_controller(
@@ -279,20 +279,45 @@ fn ship_controller(
     tf: Transform,
     kt: &mut KinematicPhysics,
 ) {
-    // Rotation damping
     // Control vector
-    let control = Vector3::new(input.roll, -input.yaw, -input.pitch);
+    let ang_control = Vector3::new(input.roll, -input.yaw, -input.pitch);
 
-    // Deadzone
-    let wanted_ang_impulse = if control.magnitude() > 0.1 {
-        tf.orient * control * ship.max_angular_impulse
+    let yaw_pitch_deadzone = 0.1;
+    let roll_deadzone = 0.4;
+    let ang_damping = 8.;
+    let forward_damping = 1.;
+    let throttle_deadzone = 0.1;
+
+    // Angular controls
+    let ang_live = ang_control.yz().magnitude() > yaw_pitch_deadzone || ang_control.x.abs() > roll_deadzone;
+    let wanted_ang_impulse = if ang_live {
+        // Angular thrust
+        tf.orient * ang_control * ship.max_angular_impulse
     } else {
-        -kt.ang_vel * 8.
+        // Rotation damping
+        -kt.ang_vel * ang_damping
     };
 
-    if wanted_ang_impulse.magnitude() > 0. {
-        let ang_impulse = wanted_ang_impulse.magnitude().min(ship.max_angular_impulse) * wanted_ang_impulse.normalize();
+    // Apply angular impulse
+    if wanted_ang_impulse != Vector3::zeros() {
+        let total_ang_impulse = wanted_ang_impulse.magnitude().min(ship.max_angular_impulse);
+        let ang_impulse = total_ang_impulse * wanted_ang_impulse.normalize();
         kt.torque(ang_impulse * dt);
+    }
+
+    // Force controls
+    let force_live = input.throttle.abs() > throttle_deadzone;
+    let wanted_impulse = if force_live {
+        tf.orient * Vector3::x() * input.throttle * ship.max_impulse
+    } else {
+        -kt.vel * forward_damping
+    };
+
+    if wanted_impulse != Vector3::zeros() {
+        let total_impulse = wanted_impulse.magnitude().min(ship.max_impulse);
+        let impulse = total_impulse * wanted_impulse.normalize();
+
+        kt.force(impulse * dt);
     }
 
 }
@@ -308,7 +333,7 @@ impl ServerState {
         if let Some(FrameTime { delta, .. }) = io.inbox_first() {
             let dt = delta;
 
-            let gravity = Vector3::new(0., -0.5, 0.);
+            let gravity = Vector3::y() * -0.5;
 
             let tf = query.read::<Transform>(self.ship_ent);
             query.modify::<KinematicPhysics>(self.ship_ent, |k| {
@@ -335,11 +360,6 @@ impl ServerState {
 
     fn camera_update(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
         let ship_transf: Transform = query.read(self.ship_ent);
-
-        //dbg!(delta);
-        //let time = time * 7.;
-        //let ship_transf = self.path.lerp(time);
-        //io.add_component(self.ship_ent, &ship_transf);
 
         let cam_pos = Transform::new()
             .with_rotation(UnitQuaternion::from_euler_angles(0., -FRAC_PI_2, 0.))
