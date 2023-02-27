@@ -45,7 +45,7 @@ pub fn simulate(query: &mut QueryResult, dt: f32) {
         let kine = query.read::<KinematicPhysics>(key);
         query.modify::<Transform>(key, |t| {
             t.pos += kine.vel * dt;
-            t.orient *= UnitQuaternion::from_scaled_axis(kine.ang_vel * dt);
+            t.orient = UnitQuaternion::from_scaled_axis(kine.ang_vel * dt) * t.orient;
         })
     }
 }

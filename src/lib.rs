@@ -282,10 +282,16 @@ fn ship_controller(
     kt: &mut KinematicPhysics,
 ) {
     // Rotation damping
-    kt.torque(dt * -kt.ang_vel * 0.99);
-
+    // Control vector
     let control = Vector3::new(input.roll, -input.yaw, -input.pitch);
-    kt.torque(tf.orient.inverse() * control * ship.max_angular_impulse * dt);
+
+    // Deadzone
+    if control.magnitude() > 0.1 {
+        kt.torque(tf.orient * control * ship.max_angular_impulse * dt);
+    } else {
+        kt.torque(-kt.ang_vel * dt);
+    }
+
 }
 
 impl ServerState {
