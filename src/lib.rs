@@ -144,8 +144,6 @@ impl ClientState {
             }
         }
 
-        dbg!(&input);
-
         io.send(&input);
     }
 }
@@ -247,7 +245,7 @@ impl UserState for ServerState {
         let ship = ShipCharacteristics {
             mass: 1000.,
             moment: 1000. * 3_f32.powi(2),
-            max_angular_impulse: 3.,
+            max_angular_impulse: 10.,
             max_thrust: 3.,
         };
 
@@ -286,16 +284,21 @@ fn ship_controller(
     let control = Vector3::new(input.roll, -input.yaw, -input.pitch);
 
     // Deadzone
-    if control.magnitude() > 0.1 {
-        kt.torque(tf.orient * control * ship.max_angular_impulse * dt);
+    let wanted_ang_impulse = if control.magnitude() > 0.1 {
+        tf.orient * control * ship.max_angular_impulse
     } else {
-        kt.torque(-kt.ang_vel * dt);
+        -kt.ang_vel * 8.
+    };
+
+    if wanted_ang_impulse.magnitude() > 0. {
+        let ang_impulse = wanted_ang_impulse.magnitude().min(ship.max_angular_impulse) * wanted_ang_impulse.normalize();
+        kt.torque(ang_impulse * dt);
     }
 
 }
 
 impl ServerState {
-    fn input_update(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
+    fn input_update(&mut self, io: &mut EngineIo, _query: &mut QueryResult) {
         for input in io.inbox::<InputAbstraction>() {
             self.last_input_state = input
         }
