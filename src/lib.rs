@@ -213,6 +213,31 @@ impl UserState for ServerState {
     }
 }
 
+struct InputAbstraction {
+    /// Desired pitching power
+    pitch: f32,
+    /// Desired yaw power
+    yaw: f32,
+    /// Desired roll power
+    roll: f32,
+    /// Desired thrust
+    throttle: f32,
+}
+
+struct ShipCharacteristics {
+    /// Mass of the ship (Kg)
+    mass: f32,
+    /// Ship's moment of inertia (Kg * m^2)
+    moment: f32,
+    /// Maximum rotational torque power (Newton-meters)
+    max_torque: f32,
+    /// Maximum thrust (Newtons)
+    max_thrust: f32,
+}
+
+fn ship_controller(dt: f32, ship: ShipCharacteristics, input: InputAbstraction, kine: &mut KinematicPhysics) {
+}
+
 impl ServerState {
     fn kinematics_update(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
         if let Some(FrameTime { delta, .. }) = io.inbox_first() {
@@ -224,12 +249,13 @@ impl ServerState {
             query.modify::<KinematicPhysics>(self.ship_ent, |k| {
                 //let diff = Vector3::zeros() - tf.translation.vector;
                 //k.force(diff.magnitude() * diff / 1000.);
-                k.torque(Vector3::new(0., 0.01, 0.) * dt);
+                k.torque(Vector3::new(0., 0.1, 0.) * dt);
 
                 // Antigravity drive :)
                 k.force(-gravity * dt);
 
-                k.force(tf.rotation * Vector3::new(1., 0., 0.) * dt);
+                let w = k.ang_vel;
+                k.force(tf.rotation * Vector3::new(10., 0., 0.) * dt * w.magnitude_squared());
             });
 
             //query.modify::<Transform>(ship_key, |t| t.pos = (t.pos / 100.).map(|x| x.fract()));
