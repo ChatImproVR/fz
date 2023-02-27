@@ -215,10 +215,11 @@ impl ServerState {
         if let Some(FrameTime { delta, .. }) = io.inbox_first() {
             let dt = delta;
 
-            let ship_key = query.key_for_entity(self.ship_ent).unwrap();
-            query.modify::<KinematicPhysics>(ship_key, |k| {
+            query.modify::<KinematicPhysics>(self.ship_ent, |k| {
                 k.force(Vector3::new(10., 0., 0.) * dt)
             });
+
+            //query.modify::<Transform>(ship_key, |t| t.pos = (t.pos / 100.).map(|x| x.fract()));
 
             kinematics::gravity(query, dt, Vector3::new(0., -0.5, 0.));
             kinematics::simulate(query, dt);
@@ -228,8 +229,7 @@ impl ServerState {
     }
 
     fn camera_update(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
-        let ship_key = query.key_for_entity(self.ship_ent).unwrap();
-        let ship_transf: Transform = query.read(ship_key);
+        let ship_transf: Transform = query.read(self.ship_ent);
 
         //dbg!(delta);
         //let time = time * 7.;
