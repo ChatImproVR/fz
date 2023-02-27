@@ -217,8 +217,7 @@ impl UserState for ServerState {
 
         sched.add_system(
             Self::input_update,
-            SystemDescriptor::new(Stage::PreUpdate)
-                .subscribe::<InputAbstraction>()
+            SystemDescriptor::new(Stage::PreUpdate).subscribe::<InputAbstraction>(),
         );
 
         sched.add_system(
@@ -245,7 +244,7 @@ impl UserState for ServerState {
         let ship = ShipCharacteristics {
             mass: 1000.,
             moment: 1000. * 3_f32.powi(2),
-            max_angular_impulse: 50.,
+            max_angular_impulse: 5.,
             max_impulse: 30.,
         };
 
@@ -283,13 +282,14 @@ fn ship_controller(
     let ang_control = Vector3::new(input.roll, -input.yaw, -input.pitch);
 
     let yaw_pitch_deadzone = 0.1;
-    let roll_deadzone = 0.4;
+    let roll_deadzone = 0.8;
     let ang_damping = 8.;
     let forward_damping = 1.;
     let throttle_deadzone = 0.1;
 
     // Angular controls
-    let ang_live = ang_control.yz().magnitude() > yaw_pitch_deadzone || ang_control.x.abs() > roll_deadzone;
+    let ang_live =
+        ang_control.yz().magnitude() > yaw_pitch_deadzone || ang_control.x.abs() > roll_deadzone;
     let wanted_ang_impulse = if ang_live {
         // Angular thrust
         tf.orient * ang_control * ship.max_angular_impulse
@@ -319,7 +319,6 @@ fn ship_controller(
 
         kt.force(impulse * dt);
     }
-
 }
 
 impl ServerState {
