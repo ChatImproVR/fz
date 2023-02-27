@@ -278,6 +278,9 @@ fn ship_controller(
     tf: Transform,
     kt: &mut KinematicPhysics,
 ) {
+    dbg!(&kt);
+    dbg!(tf);
+
     // Control vector
     let ang_control = Vector3::new(input.roll, -input.yaw, -input.pitch);
 
@@ -286,13 +289,14 @@ fn ship_controller(
     let ang_damping = 8.;
     let forward_damping = 1.;
     let throttle_deadzone = 0.1;
+    let ang_multiplier = 0.3;
 
     // Angular controls
     let ang_live =
         ang_control.yz().magnitude() > yaw_pitch_deadzone || ang_control.x.abs() > roll_deadzone;
     let wanted_ang_impulse = if ang_live {
         // Angular thrust
-        tf.orient * ang_control * ship.max_angular_impulse
+        tf.orient * ang_control * ship.max_angular_impulse * ang_multiplier
     } else {
         // Rotation damping
         -kt.ang_vel * ang_damping
@@ -301,12 +305,14 @@ fn ship_controller(
     // Apply angular impulse
     if wanted_ang_impulse != Vector3::zeros() {
         let total_ang_impulse = wanted_ang_impulse.magnitude().min(ship.max_angular_impulse);
-        let ang_impulse = total_ang_impulse * wanted_ang_impulse.normalize();
-        kt.torque(ang_impulse * dt);
+        if let Some(ang_norm) = wanted_ang_impulse.try_normalize(f32::EPSILON) {
+            let ang_impulse = total_ang_impulse * ang_norm;
+            kt.torque(ang_impulse * dt);
+        }
     }
 
     // Force controls
-    let force_live = input.throttle.abs() > throttle_deadzone;
+    let force_live = input.throttle > throttle_deadzone;
     let wanted_impulse = if force_live {
         tf.orient * Vector3::x() * input.throttle * ship.max_impulse
     } else {
@@ -315,9 +321,10 @@ fn ship_controller(
 
     if wanted_impulse != Vector3::zeros() {
         let total_impulse = wanted_impulse.magnitude().min(ship.max_impulse);
-        let impulse = total_impulse * wanted_impulse.normalize();
-
-        kt.force(impulse * dt);
+        if let Some(norm) = wanted_impulse.try_normalize(f32::EPSILON) {
+            let impulse = total_impulse * norm;
+            kt.force(impulse * dt);
+        }
     }
 }
 
