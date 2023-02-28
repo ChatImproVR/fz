@@ -312,8 +312,9 @@ fn ship_controller(
     let centering_mul = 80.;
 
     // Calculate wanted rotation to match the course
-    let nearest_t = path.nearest_t(tf.pos);
-    let local_path_tf = path.lerp(nearest_t);
+    let nearest_ctrlp = path.nearest_ctrlp(tf.pos);
+    let lookahead_ctrlp = (nearest_ctrlp + 2) % path.ctrlps.len();
+    let local_path_tf = path.ctrlps[lookahead_ctrlp];
 
 
     // Angular controls
@@ -383,8 +384,8 @@ impl ServerState {
 
             let ship_tf = query.read::<Transform>(self.ship_ent);
 
-            let nearest_t = self.path.nearest_t(ship_tf.pos);
-            let path_transf = self.path.lerp(nearest_t);
+            let nearest_ctrlp = self.path.nearest_ctrlp(ship_tf.pos);
+            let path_transf = self.path.ctrlps[nearest_ctrlp];
             io.add_component(self.cube_ent, &path_transf);
 
             query.modify::<KinematicPhysics>(self.ship_ent, |k| {
