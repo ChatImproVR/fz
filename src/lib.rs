@@ -165,6 +165,7 @@ struct ServerState {
     ship: ShipCharacteristics,
     ship_ent: EntityId,
     camera_ent: EntityId,
+    cube_ent: EntityId,
     last_input_state: InputAbstraction,
 }
 
@@ -269,6 +270,7 @@ impl UserState for ServerState {
 
         Self {
             camera_ent,
+            cube_ent,
             last_input_state: InputAbstraction::default(),
             ship,
             n: 0,
@@ -360,7 +362,12 @@ impl ServerState {
 
             let gravity = Vector3::y() * -0.5;
 
-            let tf = query.read::<Transform>(self.ship_ent);
+            let ship_tf = query.read::<Transform>(self.ship_ent);
+
+            let nearest_t = self.path.nearest_t(ship_tf.pos, 5);
+            let path_transf = self.path.lerp(nearest_t);
+            io.add_component(self.cube_ent, &path_transf);
+
             query.modify::<KinematicPhysics>(self.ship_ent, |k| {
                 //let diff = Vector3::zeros() - tf.translation.vector;
                 //k.force(diff.magnitude() * diff / 1000.);
@@ -369,7 +376,7 @@ impl ServerState {
                 // Antigravity drive :)
                 k.force(-gravity * dt);
 
-                ship_controller(dt, self.ship, self.last_input_state, tf, k)
+                ship_controller(dt, self.ship, self.last_input_state, ship_tf, k)
 
                 //k.force(tf.rotation * Vector3::new(10., 0., 0.) * dt * w.magnitude_squared());
             });
