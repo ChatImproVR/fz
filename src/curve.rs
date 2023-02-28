@@ -4,7 +4,7 @@ use cimvr_common::{
 };
 
 pub struct Path {
-    ctrlps: Vec<Transform>,
+    pub ctrlps: Vec<Transform>,
 }
 
 impl Path {
@@ -12,6 +12,7 @@ impl Path {
         Self { ctrlps }
     }
 
+    /// Get the indices of the transforms behind and in front of the given t value respectively
     pub fn index(&self, t: f32) -> (usize, usize) {
         // Index part of path position
         let i = t.floor() as usize;
@@ -23,6 +24,7 @@ impl Path {
         (behind, in_front)
     }
 
+    /// Linearly interpolate along the path
     pub fn lerp(&self, t: f32) -> Transform {
         let (behind, in_front) = self.index(t);
         trans_lerp_slerp(self.ctrlps[behind], self.ctrlps[in_front], t.fract())

@@ -217,11 +217,13 @@ impl UserState for ServerState {
         let transforms = orientations(&path_mesh);
         let path = Path::new(transforms);
 
+        // Add gamepad/keyboard input system
         sched.add_system(
             Self::input_update,
             SystemDescriptor::new(Stage::PreUpdate).subscribe::<InputAbstraction>(),
         );
 
+        // Add physics system
         sched.add_system(
             Self::kinematics_update,
             SystemDescriptor::new(Stage::Update)
@@ -243,10 +245,11 @@ impl UserState for ServerState {
                 .subscribe::<FrameTime>(),
         );
 
+        // Define ship capabilities
         let ship = ShipCharacteristics {
             mass: 1000.,
             moment: 1000. * 3_f32.powi(2),
-            max_angular_impulse: 5.,
+            max_twirl: 5.,
             max_impulse: 30.,
         };
 
@@ -267,8 +270,8 @@ struct ShipCharacteristics {
     mass: f32,
     /// Ship's moment of inertia (Kg * m^2)
     moment: f32,
-    /// Maximum rotational torque power (Newton-meters)
-    max_angular_impulse: f32,
+    /// Maximum angular impulse power (Newton-meters)
+    max_twirl: f32,
     /// Maximum thrust (Newtons)
     max_impulse: f32,
 }
@@ -298,7 +301,7 @@ fn ship_controller(
         ang_control.yz().magnitude() > yaw_pitch_deadzone || ang_control.x.abs() > roll_deadzone;
     let wanted_ang_impulse = if ang_live {
         // Angular thrust
-        tf.orient * ang_control * ship.max_angular_impulse * ang_multiplier
+        tf.orient * ang_control * ship.max_twirl * ang_multiplier
     } else {
         // Rotation damping
         -kt.ang_vel * ang_damping
@@ -306,7 +309,7 @@ fn ship_controller(
 
     // Apply angular impulse
     if wanted_ang_impulse != Vector3::zeros() {
-        let total_ang_impulse = wanted_ang_impulse.magnitude().min(ship.max_angular_impulse);
+        let total_ang_impulse = wanted_ang_impulse.magnitude().min(ship.max_twirl);
         if let Some(ang_norm) = wanted_ang_impulse.try_normalize(f32::EPSILON) {
             let ang_impulse = total_ang_impulse * ang_norm;
             kt.torque(ang_impulse * dt);
