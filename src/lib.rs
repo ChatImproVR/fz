@@ -15,9 +15,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::obj::obj_lines_to_mesh;
 
+mod curve;
 mod kinematics;
 mod obj;
-mod curve;
 use curve::Path;
 
 // All state associated with client-side behaviour
@@ -224,7 +224,10 @@ impl UserState for ServerState {
         // Create a cube
         let cube_ent = io.create_entity();
         io.add_component(cube_ent, &Transform::default());
-        io.add_component(cube_ent, &Render::new(CUBE_HANDLE).primitive(Primitive::Triangles));
+        io.add_component(
+            cube_ent,
+            &Render::new(CUBE_HANDLE).primitive(Primitive::Triangles),
+        );
         io.add_component(cube_ent, &Synchronized);
 
         // Parse path mesh
@@ -313,9 +316,6 @@ fn ship_controller(
 
     // Calculate wanted rotation to match the course
     let nearest_ctrlp = path.nearest_ctrlp(tf.pos);
-    let lookahead_ctrlp = (nearest_ctrlp + 2) % path.ctrlps.len();
-    let local_path_tf = path.ctrlps[lookahead_ctrlp];
-
 
     // Angular controls
     // Decide if the user wants control
@@ -327,7 +327,14 @@ fn ship_controller(
         tf.orient * ang_control * ship.max_twirl * ang_multiplier
     } else {
         // Align with path direction
-        let wanted_rotation = tf.orient.rotation_to(&local_path_tf.orient);
+        let lookahead_ctrlp = (nearest_ctrlp + 2) % path.ctrlps.len();
+        let ahead = path.ctrlps[lookahead_ctrlp];
+        let ahead_offset = ahead.pos - tf.pos;
+
+        let current_dir = tf.orient * Vector3::x();
+
+        let wanted_rotation = UnitQuaternion::rotation_between(&current_dir, &ahead_offset)
+            .unwrap_or(UnitQuaternion::identity());
         let (r, p, y) = wanted_rotation.euler_angles();
         let centering = Vector3::new(r, p, y) * centering_mul;
 
@@ -354,11 +361,10 @@ fn ship_controller(
         -kt.vel * forward_damping
     };
 
-    let path_forward = local_path_tf.orient * Vector3::x();
+    let path_forward = path.ctrlps[nearest_ctrlp].orient * Vector3::x();
     let proj = path_forward.dot(&kt.vel);
     let intertial_damp = -(kt.vel - proj * path_forward);
     let wanted_impulse = wanted_impulse + proj * intertial_damp;
-
 
     if wanted_impulse != Vector3::zeros() {
         let total_impulse = wanted_impulse.magnitude().min(ship.max_impulse);
@@ -423,8 +429,6 @@ impl ServerState {
     }
 }
 
-
-
 // Defines entry points for the engine to hook into.
 // Calls new() for the appropriate state.
 make_app_state!(ClientState, ServerState);
@@ -461,7 +465,6 @@ impl Message for InputAbstraction {
         locality: Locality::Remote,
     };
 }
-
 
 /// Defines the mesh data fro a cube
 fn cube() -> Mesh {
