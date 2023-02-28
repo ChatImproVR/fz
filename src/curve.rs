@@ -32,7 +32,7 @@ impl Path {
 
     /// Estimates the nearest curve index `t` to the given 3D position.
     /// Increasing iterations increases accuracy at the cost of performance
-    pub fn nearest_t(&self, pt: Point3<f32>, _iters: usize) -> f32 {
+    pub fn nearest_t(&self, pt: Point3<f32>) -> f32 {
         let mut smallest_idx = 0;
         let mut smallest_dist = f32::MAX;
 

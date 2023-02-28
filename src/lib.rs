@@ -297,11 +297,9 @@ fn ship_controller(
     ship: ShipCharacteristics,
     input: InputAbstraction,
     tf: Transform,
+    path: &Path,
     kt: &mut KinematicPhysics,
 ) {
-    dbg!(&kt);
-    dbg!(tf);
-
     // Control vector
     let ang_control = Vector3::new(input.roll, -input.yaw, -input.pitch);
 
@@ -311,16 +309,31 @@ fn ship_controller(
     let forward_damping = 1.;
     let throttle_deadzone = 0.1;
     let ang_multiplier = 0.3;
+    let centering_mul = 80.;
+
+    // Calculate wanted rotation to match the course
+    let nearest_t = path.nearest_t(tf.pos);
+    let local_path_tf = path.lerp(nearest_t);
+
 
     // Angular controls
+    // Decide if the user wants control
     let ang_live =
         ang_control.yz().magnitude() > yaw_pitch_deadzone || ang_control.x.abs() > roll_deadzone;
+
     let wanted_ang_impulse = if ang_live {
-        // Angular thrust
+        // Angular impulse
         tf.orient * ang_control * ship.max_twirl * ang_multiplier
     } else {
+        // Align with path direction
+        let wanted_rotation = tf.orient.rotation_to(&local_path_tf.orient);
+        let (r, p, y) = wanted_rotation.euler_angles();
+        let centering = Vector3::new(r, p, y) * centering_mul;
+
         // Rotation damping
-        -kt.ang_vel * ang_damping
+        let damping = -kt.ang_vel * ang_damping;
+
+        centering + damping
     };
 
     // Apply angular impulse
@@ -339,6 +352,12 @@ fn ship_controller(
     } else {
         -kt.vel * forward_damping
     };
+
+    let path_forward = local_path_tf.orient * Vector3::x();
+    let proj = path_forward.dot(&kt.vel);
+    let intertial_damp = -(kt.vel - proj * path_forward);
+    let wanted_impulse = wanted_impulse + proj * intertial_damp;
+
 
     if wanted_impulse != Vector3::zeros() {
         let total_impulse = wanted_impulse.magnitude().min(ship.max_impulse);
@@ -364,7 +383,7 @@ impl ServerState {
 
             let ship_tf = query.read::<Transform>(self.ship_ent);
 
-            let nearest_t = self.path.nearest_t(ship_tf.pos, 5);
+            let nearest_t = self.path.nearest_t(ship_tf.pos);
             let path_transf = self.path.lerp(nearest_t);
             io.add_component(self.cube_ent, &path_transf);
 
@@ -376,7 +395,7 @@ impl ServerState {
                 // Antigravity drive :)
                 k.force(-gravity * dt);
 
-                ship_controller(dt, self.ship, self.last_input_state, ship_tf, k)
+                ship_controller(dt, self.ship, self.last_input_state, ship_tf, &self.path, k)
 
                 //k.force(tf.rotation * Vector3::new(10., 0., 0.) * dt * w.magnitude_squared());
             });
