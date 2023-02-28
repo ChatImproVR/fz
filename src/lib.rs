@@ -28,6 +28,7 @@ struct ClientState {
 pub const SHIP_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Ship"));
 pub const MAP_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Map"));
 pub const FLOOR_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Floor"));
+pub const CUBE_HANDLE: MeshHandle = MeshHandle::new(pkg_namespace!("Cube"));
 
 // Need a function which can turn a position in 3D and a previous value, and return a next value
 // This value correspondss to the curve interpolation over the whole shibam
@@ -84,9 +85,16 @@ impl UserState for ClientState {
         });
 
         let ship_mesh = obj_lines_to_mesh(include_str!("assets/ship.obj"));
+        // Upload ship
         io.send(&UploadMesh {
             mesh: ship_mesh,
             id: SHIP_RDR,
+        });
+
+        // Upload cube
+        io.send(&UploadMesh {
+            mesh: cube(),
+            id: CUBE_HANDLE,
         });
 
         sched.add_system(
@@ -211,6 +219,12 @@ impl UserState for ServerState {
             &Render::new(FLOOR_RDR).primitive(Primitive::Lines),
         );
         io.add_component(floor_ent, &Synchronized);
+
+        // Create a cube
+        let cube_ent = io.create_entity();
+        io.add_component(cube_ent, &Transform::default());
+        io.add_component(cube_ent, &Render::new(CUBE_HANDLE).primitive(Primitive::Triangles));
+        io.add_component(cube_ent, &Synchronized);
 
         // Parse path mesh
         let path_mesh = obj_lines_to_mesh(include_str!("assets/path.obj"));
@@ -419,4 +433,27 @@ impl Message for InputAbstraction {
         id: pkg_namespace!("InputAbstraction"),
         locality: Locality::Remote,
     };
+}
+
+
+/// Defines the mesh data fro a cube
+fn cube() -> Mesh {
+    let size = 0.25;
+    let vertices = vec![
+        Vertex::new([-size, -size, -size], [0.0, 1.0, 1.0]),
+        Vertex::new([size, -size, -size], [1.0, 0.0, 1.0]),
+        Vertex::new([size, size, -size], [1.0, 1.0, 0.0]),
+        Vertex::new([-size, size, -size], [0.0, 1.0, 1.0]),
+        Vertex::new([-size, -size, size], [1.0, 0.0, 1.0]),
+        Vertex::new([size, -size, size], [1.0, 1.0, 0.0]),
+        Vertex::new([size, size, size], [0.0, 1.0, 1.0]),
+        Vertex::new([-size, size, size], [1.0, 0.0, 1.0]),
+    ];
+
+    let indices = vec![
+        3, 1, 0, 2, 1, 3, 2, 5, 1, 6, 5, 2, 6, 4, 5, 7, 4, 6, 7, 0, 4, 3, 0, 7, 7, 2, 3, 6, 2, 7,
+        0, 5, 4, 1, 5, 0,
+    ];
+
+    Mesh { vertices, indices }
 }
