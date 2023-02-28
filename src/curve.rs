@@ -1,82 +1,55 @@
 use cimvr_common::{
-    nalgebra::{Point3, Vector3, UnitQuaternion},
+    nalgebra::{Isometry3, Point3},
     Transform,
 };
 
-pub struct Curve(pub Vec<ControlPoint>);
-
-pub struct ControlPoint {
-    pub up: Vector3<f32>,
-    pub dir: Vector3<f32>,
-    pub pos: Point3<f32>,
+pub struct Path {
+    ctrlps: Vec<Transform>,
 }
 
-struct QuadBezier {
-    pub a: Point3<f32>,
-    pub b: Point3<f32>,
-    pub c: Point3<f32>,
-    pub d: Point3<f32>,
-}
+impl Path {
+    pub fn new(ctrlps: Vec<Transform>) -> Self {
+        Self { ctrlps }
+    }
 
-impl Curve {
-    fn get_quad(&self, t: f32) -> QuadBezier {
-        assert!(t < self.0.len() as f32);
-        assert!(t >= 0.);
-
+    pub fn index(&self, t: f32) -> (usize, usize) {
+        // Index part of path position
         let i = t.floor() as usize;
-        let Self(ctrlp) = self;
-        QuadBezier {
-            a: ctrlp[i].pos,
-            b: ctrlp[i].pos + ctrlp[i].dir,
-            c: ctrlp[i + 1].pos - ctrlp[i].dir,
-            d: ctrlp[i + 1].pos,
+        let len = self.ctrlps.len();
+
+        let behind = i % len;
+        let in_front = (i + 1) % len;
+
+        (behind, in_front)
+    }
+
+    pub fn lerp(&self, t: f32) -> Transform {
+        let (behind, in_front) = self.index(t);
+        trans_lerp_slerp(self.ctrlps[behind], self.ctrlps[in_front], t.fract())
+    }
+
+    /// Estimates the nearest curve index `t` to the given 3D position.
+    /// Increasing iterations increases accuracy at the cost of performance
+    pub fn nearest_t(&self, pt: Point3<f32>, _iters: usize) -> f32 {
+        let mut smallest_idx = 0;
+        let mut smallest_dist = f32::MAX;
+
+        for (idx, ctrlpt) in self.ctrlps.iter().enumerate() {
+            let dist = (ctrlpt.pos - pt).magnitude();
+            if dist < smallest_dist {
+                smallest_dist = dist;
+                smallest_idx = idx;
+            }
         }
-    }
 
-    pub fn pos(&self, t: f32) -> Point3<f32> {
-        self.get_quad(t).interp(t.fract())
-    }
-
-    pub fn deriv(&self, t: f32) -> Vector3<f32> {
-        self.get_quad(t).deriv(t.fract())
-    }
-
-    pub fn up(&self, t: f32) -> Vector3<f32> {
-        let i = t.floor() as usize;
-        let a = self.0[i].up;
-        let b = self.0[i + 1].up;
-
-        let f = t.fract();
-
-        (1. - f) * a + f * b
+        // TODO: Binary search refinement
+        smallest_idx as f32
     }
 }
 
-impl QuadBezier {
-    pub fn interp(&self, t: f32) -> Point3<f32> {
-        let neg = 1. - t;
-        neg.powi(3) * t.powi(0) * self.a
-            + neg.powi(2) * t.powi(1) * self.b.coords
-            + neg.powi(1) * t.powi(2) * self.c.coords
-            + neg.powi(0) * t.powi(3) * self.d.coords
-    }
-
-    pub fn deriv(&self, t: f32) -> Vector3<f32> {
-        let neg = 1. - t;
-        3. * neg.powi(2) * t.powi(0) * (self.b - self.a)
-            + 6. * neg.powi(1) * t.powi(1) * (self.c - self.b)
-            + 3. * neg.powi(0) * t.powi(2) * (self.d - self.c)
-    }
-}
-
-pub fn sample_path(curve: &Curve, n: usize) -> Vec<Transform> {
-    let mut orient = UnitQuaternion::new();
-
-    let mut transf = vec![];
-
-    for _ in 0..n {
-        orient *= UnitQuaternion::rotation_between();
-    }
-
-    transf
+/// Interpolate between transforms
+pub fn trans_lerp_slerp(a: Transform, b: Transform, t: f32) -> Transform {
+    let a: Isometry3<f32> = a.into();
+    let b: Isometry3<f32> = b.into();
+    a.lerp_slerp(&b, t).into()
 }

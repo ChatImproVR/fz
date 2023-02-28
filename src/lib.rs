@@ -3,7 +3,7 @@ use std::f32::consts::FRAC_PI_2;
 use cimvr_common::{
     desktop::InputEvents,
     gamepad::{Axis, GamepadState},
-    nalgebra::{Isometry3, Matrix3, Matrix4, Point2, Point3, UnitQuaternion, Vector2, Vector3},
+    nalgebra::{Matrix3, Point3, UnitQuaternion, Vector3},
     render::{CameraComponent, Mesh, MeshHandle, Primitive, Render, UploadMesh, Vertex},
     utils::camera::Perspective,
     vr::VrUpdate,
@@ -17,6 +17,8 @@ use crate::obj::obj_lines_to_mesh;
 
 mod kinematics;
 mod obj;
+mod curve;
+use curve::Path;
 
 // All state associated with client-side behaviour
 struct ClientState {
@@ -137,9 +139,9 @@ impl ClientState {
 
         if let Some(GamepadState(gamepads)) = io.inbox_first() {
             if let Some(gamepad) = gamepads.into_iter().next() {
-                input.yaw = gamepad.axes[&Axis::LeftStickX];
+                input.yaw = gamepad.axes[&Axis::RightStickX];
                 input.pitch = gamepad.axes[&Axis::LeftStickY];
-                input.roll = gamepad.axes[&Axis::RightStickX];
+                input.roll = gamepad.axes[&Axis::LeftStickX];
                 input.throttle = gamepad.axes[&Axis::RightStickY];
             }
         }
@@ -377,67 +379,7 @@ impl ServerState {
     }
 }
 
-struct Path {
-    ctrlps: Vec<Transform>,
-}
 
-impl Path {
-    pub fn new(ctrlps: Vec<Transform>) -> Self {
-        Self { ctrlps }
-    }
-
-    fn index(&self, t: f32) -> (usize, usize) {
-        // Index part of path position
-        let i = t.floor() as usize;
-        let len = self.ctrlps.len();
-
-        let behind = i % len;
-        let in_front = (i + 1) % len;
-
-        (behind, in_front)
-    }
-
-    fn lerp(&self, t: f32) -> Transform {
-        let (behind, in_front) = self.index(t);
-        transf_lerp(self.ctrlps[behind], self.ctrlps[in_front], t.fract())
-    }
-
-    /// Returns an index which is approximately `dist` units along the curve from index `t`
-    /// Uses pos2d to determine the path length (e.g. the insides of curves are shortest)
-    fn step_distance(&self, remaining_dist: f32, t: f32, pos2d: Point2<f32>) -> f32 {
-        let mut t = t;
-        /* wip
-        let mut remaining_dist = remaining_dist;
-
-        fn pos_3d(tf: Transform, pos2d: Point2<f32>) -> Point3<f32> {
-            let iso: Isometry3<f32> = tf.into();
-            let pos3d = Point3::new(0., pos2d.y, pos2d.x);
-            iso.transform_point(&pos3d)
-        }
-
-        while remaining_dist > 0. {
-            let current_orient = self.lerp(t);
-            let (in_front, _) = self.index(t);
-            let current_pos3d = pos_3d(current_orient, pos2d);
-            let front_pos3d = pos_3d(self.ctrlps[in_front], pos2d);
-            let dist = (current_pos3d - front_pos3d).magnitude();
-            if dist <= 0.0 {
-                return t;
-            }
-
-
-        }
-
-        */
-        t
-    }
-}
-
-fn transf_lerp(a: Transform, b: Transform, t: f32) -> Transform {
-    let a: Isometry3<f32> = a.into();
-    let b: Isometry3<f32> = b.into();
-    a.lerp_slerp(&b, t).into()
-}
 
 // Defines entry points for the engine to hook into.
 // Calls new() for the appropriate state.

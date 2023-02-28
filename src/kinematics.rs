@@ -1,6 +1,6 @@
 use cimvr_common::{nalgebra, Transform};
 use cimvr_engine_interface::{pkg_namespace, prelude::*};
-use nalgebra::{Isometry3, Vector3, Matrix4, Point3, Translation3, UnitQuaternion};
+use nalgebra::{Vector3, UnitQuaternion};
 use serde::{Deserialize, Serialize};
 
 /// Component for objects simulated with the kinematics system
