@@ -246,7 +246,7 @@ impl UserState for ServerState {
             Self::kinematics_update,
             SystemDescriptor::new(Stage::Update)
                 .query::<Transform>(Access::Write)
-                .query::<KinematicPhysics>(Access::Read)
+                .query::<KinematicPhysics>(Access::Write)
                 .subscribe::<FrameTime>(),
         );
 
@@ -299,8 +299,8 @@ fn ship_controller(
     dt: f32,
     ship: ShipCharacteristics,
     input: InputAbstraction,
-    tf: Transform,
     path: &Path,
+    tf: &mut Transform,
     kt: &mut KinematicPhysics,
 ) {
     // Control vector
@@ -386,30 +386,25 @@ impl ServerState {
         if let Some(FrameTime { delta, .. }) = io.inbox_first() {
             let dt = delta;
 
-            let gravity = Vector3::y() * -0.5;
+            // Get current physical properties
+            let mut kt: KinematicPhysics = query.read(self.ship_ent);
+            let mut tf: Transform = query.read(self.ship_ent);
 
-            let ship_tf = query.read::<Transform>(self.ship_ent);
-
-            let nearest_ctrlp = self.path.nearest_ctrlp(ship_tf.pos);
+            // Move the cube
+            let nearest_ctrlp = self.path.nearest_ctrlp(tf.pos);
             let path_transf = self.path.ctrlps[nearest_ctrlp];
             io.add_component(self.cube_ent, &path_transf);
 
-            query.modify::<KinematicPhysics>(self.ship_ent, |k| {
-                //let diff = Vector3::zeros() - tf.translation.vector;
-                //k.force(diff.magnitude() * diff / 1000.);
-                //k.torque(Vector3::new(0., 0.1, 0.) * dt);
+            // Step ship forward in time
+            ship_controller(dt, self.ship, self.last_input_state, &self.path, &mut tf, &mut kt);
 
-                // Antigravity drive :)
-                k.force(-gravity * dt);
+            query.write(self.ship_ent, &kt);
+            query.write(self.ship_ent, &tf);
 
-                ship_controller(dt, self.ship, self.last_input_state, ship_tf, &self.path, k)
+            //let gravity = Vector3::y() * -0.5;
+            //kinematics::gravity(query, dt, gravity);
 
-                //k.force(tf.rotation * Vector3::new(10., 0., 0.) * dt * w.magnitude_squared());
-            });
-
-            //query.modify::<Transform>(ship_key, |t| t.pos = (t.pos / 100.).map(|x| x.fract()));
-
-            kinematics::gravity(query, dt, gravity);
+            // Simulate kinematics
             kinematics::simulate(query, dt);
         } else {
             println!("Expected FrameTime message!");
