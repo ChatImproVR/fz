@@ -103,7 +103,6 @@ impl UserState for ClientState {
         let camera_ent = io.create_entity();
         io.add_component(camera_ent, &Transform::identity());
         io.add_component(camera_ent, &CameraComponent::default());
-        io.add_component(camera_ent, &Synchronized);
 
         // Upload cube
         io.send(&UploadMesh {
@@ -195,13 +194,8 @@ impl ClientState {
     }
 }
 
-struct ConnectedClient {
-    last_input_state: InputAbstraction,
-}
-
 // All state associated with server-side behaviour
 struct ServerState {
-    n: usize,
     path: Path,
     motion_cfg: ShipCharacteristics,
     clients: HashMap<ClientId, InputAbstraction>,
@@ -287,7 +281,6 @@ impl UserState for ServerState {
 
         Self {
             motion_cfg: ship,
-            n: 0,
             path,
             clients: Default::default(),
         }
