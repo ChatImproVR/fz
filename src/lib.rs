@@ -307,13 +307,14 @@ fn ship_controller(
     let nearest_ctrlp_idx = path.nearest_ctrlp(tf.pos);
     let nearest_ctrlp = path.ctrlps[nearest_ctrlp_idx];
     let nearest_iso: Isometry3<f32> = nearest_ctrlp.into();
-    let path_local_space = nearest_iso.inverse() * tf.pos;
+    let tf_iso: Isometry3<f32> = tf.clone().into();
+    let path_local_space = nearest_iso.inverse() * tf_iso;
 
     // Collision detection
     const TRACK_WIDTH: f32 = 32.;
     const TRACK_HEIGHT: f32 = 10.;
-    let z_bound = path_local_space.z.abs() > TRACK_WIDTH / 2.;
-    let y_bound = path_local_space.y.abs() > TRACK_HEIGHT / 2.;
+    let z_bound = path_local_space.translation.z.abs() > TRACK_WIDTH / 2.;
+    let y_bound = path_local_space.translation.y.abs() > TRACK_HEIGHT / 2.;
     if z_bound || y_bound {
         *tf = nearest_ctrlp;
         kt.ang_vel = Vector3::zeros();
@@ -334,7 +335,7 @@ fn ship_controller(
         let total_impulse = wanted_impulse.magnitude().min(ship.max_impulse);
         if let Some(norm) = wanted_impulse.try_normalize(f32::EPSILON) {
             let impulse = total_impulse * norm;
-            kt.force(dbg!(impulse * dt));
+            kt.force(impulse * dt);
         }
     }
 
@@ -351,6 +352,15 @@ fn ship_controller(
     let wanted_orient = future_pt.orient * UnitQuaternion::from_euler_angles(desired_roll_radians, 0., 0.);
 
     tf.orient = wanted_orient;
+
+    let mut horiz_thrust = path_local_space * Vector3::y();
+    horiz_thrust.y = 0.0;
+    let horiz_thrust = nearest_iso * horiz_thrust;
+
+    let wanted_y = nearest_ctrlp.pos.y;
+    tf.pos.y = wanted_y;
+
+    kt.vel += horiz_thrust * kt.vel.magnitude() * dt;
 }
 
 impl ServerState {
