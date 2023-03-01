@@ -69,8 +69,8 @@ fn orientations(mesh: &Mesh) -> Vec<Transform> {
     transforms
 }
 
-const ENV_OBJ: &str = include_str!("assets/loop2_env.obj");
-const PATH_OBJ: &str = include_str!("assets/loop2_path.obj");
+const ENV_OBJ: &str = include_str!("assets/loop1_env.obj");
+const PATH_OBJ: &str = include_str!("assets/loop1_path.obj");
 
 impl UserState for ClientState {
     // Implement a constructor
@@ -355,7 +355,7 @@ fn ship_controller(
 
     // Follow pathdirection smoothly
     let future_pt = path.lerp(nearest_ctrlp_idx as f32 + 3.5);
-    let wanted_orient = future_pt.orient * UnitQuaternion::from_euler_angles(desired_roll * PI/12., 0., 0.);
+    let wanted_orient = future_pt.orient * UnitQuaternion::from_euler_angles(desired_roll * PI/16., 0., 0.);
 
     let track_rel_vel = nearest_ctrlp.orient.inverse() * kt.vel;
     let lerp_speed = dt * track_rel_vel.x / TRACK_LENGTH;
