@@ -349,18 +349,20 @@ fn ship_controller(
     };
 
     // Follow pathdirection smoothly
-    let future_pt = path.lerp(nearest_ctrlp_idx as f32 + 1.5);
+    let future_pt = path.lerp(nearest_ctrlp_idx as f32 + 3.5);
     let wanted_orient = future_pt.orient * UnitQuaternion::from_euler_angles(desired_roll_radians, 0., 0.);
 
     let forward_vel = (tf.orient.inverse() * kt.vel).x.abs();
     tf.orient = tf.orient.slerp(&wanted_orient, forward_vel * dt / TRACK_LENGTH);
 
     // Horizontal thrusters
-    let mut horiz_thrust = path_local_space * Vector3::y();
-    horiz_thrust.y = 0.0;
-    let horiz_thrust = nearest_iso * horiz_thrust;
+    let local_vel = tf.orient.inverse() * kt.vel;
+    let horiz_thrust_available = (path_local_space * Vector3::y()).z;
 
-    kt.vel += horiz_thrust * forward_vel.powi(1) * dt * 5.;
+    let track_rel_vel = nearest_ctrlp.orient.inverse() * kt.vel;
+    let track_un_force = nearest_ctrlp.orient * (track_rel_vel.z * Vector3::z());
+
+    kt.vel += -track_un_force * dt * kt.vel.magnitude() * desired_roll_radians.sin().abs();;
 
     // Lock Y pos
     let wanted_y = nearest_ctrlp.pos.y;
