@@ -27,6 +27,7 @@ use curve::Path;
 struct ClientState {
     proj: Perspective,
     camera_ent: EntityId,
+    ship_ent: Option<EntityId>,
 }
 
 pub const SHIP_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Ship"));
@@ -116,8 +117,9 @@ impl UserState for ClientState {
                 .subscribe::<InputEvents>()
                 .subscribe::<VrUpdate>()
                 .subscribe::<FrameTime>()
-                .query::<CameraComponent>(Access::Write)
-                .query::<Transform>(Access::Write),
+                .subscribe::<ShipIdMessage>()
+                .query::<Transform>(Access::Write)
+                .query::<ShipComponent>(Access::Write),
         );
 
         sched.add_system(
@@ -128,12 +130,14 @@ impl UserState for ClientState {
         Self {
             proj: Perspective::new(),
             camera_ent,
+            ship_ent: None,
         }
     }
 }
 
 impl ClientState {
     fn camera(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
+        // Perspective matrix stuff
         if let Some(input) = io.inbox_first::<InputEvents>() {
             self.proj.handle_input_events(&input);
         }
@@ -146,25 +150,33 @@ impl ClientState {
         self.proj.fov = 79_f32.to_radians();
         let clear_color = [0.; 3];
 
-        for key in query.iter() {
-            query.write::<CameraComponent>(
-                key,
-                &CameraComponent {
-                    clear_color,
-                    projection,
-                },
-            );
+        io.add_component(
+            self.camera_ent,
+            &CameraComponent {
+                clear_color,
+                projection,
+            },
+        );
+
+        // Ship ID
+        if self.ship_ent.is_none() {
+            if let Some(ShipIdMessage(ent)) = io.inbox_first() {
+                self.ship_ent = Some(ent);
+            }
         }
 
-        let ship_transf: Transform = query.read(self.ship_ent);
+        // Set camera pos
+        if let Some(ship_ent) = self.ship_ent {
+            let ship_transf: Transform = query.read(ship_ent);
 
-        let cam_pos = Transform::new()
-            .with_rotation(UnitQuaternion::from_euler_angles(0., -FRAC_PI_2, 0.))
-            .with_position(Point3::new(-13., 2., 0.));
+            let cam_pos = Transform::new()
+                .with_rotation(UnitQuaternion::from_euler_angles(0., -FRAC_PI_2, 0.))
+                .with_position(Point3::new(-13., 2., 0.));
 
-        let cam_transf = ship_transf * cam_pos;
+            let cam_transf = ship_transf * cam_pos;
 
-        io.add_component(self.camera_ent, &cam_transf);
+            io.add_component(self.camera_ent, &cam_transf);
+        }
     }
 
     fn controller_input(&mut self, io: &mut EngineIo, _query: &mut QueryResult) {
@@ -202,7 +214,7 @@ struct ShipComponent(ClientId);
 impl Component for ShipComponent {
     const ID: ComponentIdStatic = ComponentIdStatic {
         id: pkg_namespace!("Ship"),
-        size: 0,
+        size: 4,
     };
 }
 
@@ -236,8 +248,8 @@ impl UserState for ServerState {
         sched.add_system(
             Self::conn_update,
             SystemDescriptor::new(Stage::PreUpdate)
-                .subscribe::<Connections>()
-                .query::<ShipComponent>(Access::Write),
+            .subscribe::<Connections>()
+            .query::<ShipComponent>(Access::Write),
         );
 
         // Add gamepad/keyboard input system
@@ -250,19 +262,19 @@ impl UserState for ServerState {
         sched.add_system(
             Self::motion_update,
             SystemDescriptor::new(Stage::Update)
-                .query::<Transform>(Access::Write)
-                .query::<KinematicPhysics>(Access::Write)
-                .query::<ShipComponent>(Access::Read)
-                .subscribe::<FrameTime>(),
+            .query::<Transform>(Access::Write)
+            .query::<KinematicPhysics>(Access::Write)
+            .query::<ShipComponent>(Access::Read)
+            .subscribe::<FrameTime>(),
         );
 
         // Add physics system
         sched.add_system(
             Self::kinematics_update,
             SystemDescriptor::new(Stage::Update)
-                .query::<Transform>(Access::Write)
-                .query::<KinematicPhysics>(Access::Write)
-                .subscribe::<FrameTime>(),
+            .query::<Transform>(Access::Write)
+            .query::<KinematicPhysics>(Access::Write)
+            .subscribe::<FrameTime>(),
         );
 
         // Define ship capabilities
@@ -274,10 +286,10 @@ impl UserState for ServerState {
         };
 
         Self {
-            last_input_state: InputAbstraction::default(),
             motion_cfg: ship,
             n: 0,
             path,
+            clients: Default::default(),
         }
     }
 }
@@ -290,9 +302,12 @@ impl ServerState {
                     .iter()
                     .find(|&ent| query.read::<ShipComponent>(ent) == ShipComponent(client));
 
-                if found_ship.is_none() {
+                let ship_ent;
+                if let Some(ent) = found_ship {
+                    ship_ent = ent;
+                } else {
                     // Add ship
-                    let ship_ent = io.create_entity();
+                    ship_ent = io.create_entity();
                     io.add_component(ship_ent, &Transform::identity());
                     io.add_component(ship_ent, &Render::new(SHIP_RDR).primitive(Primitive::Lines));
                     io.add_component(ship_ent, &Synchronized);
@@ -307,6 +322,8 @@ impl ServerState {
                         },
                     );
                 }
+
+                io.send_to_client(&ShipIdMessage(ship_ent), client);
             }
         }
     }
@@ -462,10 +479,10 @@ fn grid_mesh(n: i32, scale: f32) -> Mesh {
             [-width, 0.0, j],
         ];
 
-        for pos in positions {
-            let idx = m.push_vertex(Vertex::new(pos, color));
-            m.indices.push(idx);
-        }
+            for pos in positions {
+                let idx = m.push_vertex(Vertex::new(pos, color));
+                m.indices.push(idx);
+            }
     }
 
     m
@@ -498,4 +515,15 @@ fn cube() -> Mesh {
     ];
 
     Mesh { vertices, indices }
+}
+
+/// Message telling a client which ID it has
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+struct ShipIdMessage(EntityId);
+
+impl Message for ShipIdMessage {
+    const CHANNEL: ChannelIdStatic = ChannelIdStatic {
+        id: pkg_namespace!("ShipIdMessage"),
+        locality: Locality::Remote,
+    };
 }
