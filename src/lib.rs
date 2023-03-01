@@ -223,12 +223,14 @@ impl UserState for ServerState {
 
         // Create a cube
         let cube_ent = io.create_entity();
+        /*
         io.add_component(cube_ent, &Transform::default());
         io.add_component(
             cube_ent,
             &Render::new(CUBE_HANDLE).primitive(Primitive::Triangles),
         );
         io.add_component(cube_ent, &Synchronized);
+        */
 
         // Parse path mesh
         let path_mesh = obj_lines_to_mesh(include_str!("assets/path.obj"));
