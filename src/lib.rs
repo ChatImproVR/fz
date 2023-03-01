@@ -69,8 +69,8 @@ fn orientations(mesh: &Mesh) -> Vec<Transform> {
     transforms
 }
 
-const ENV_OBJ: &str = include_str!("assets/loop1_env.obj");
-const PATH_OBJ: &str = include_str!("assets/loop1_path.obj");
+const ENV_OBJ: &str = include_str!("assets/loop2_env.obj");
+const PATH_OBJ: &str = include_str!("assets/loop2_path.obj");
 
 impl UserState for ClientState {
     // Implement a constructor
@@ -359,7 +359,7 @@ fn ship_controller(
 
     let track_rel_vel = nearest_ctrlp.orient.inverse() * kt.vel;
     let lerp_speed = dt * track_rel_vel.x / TRACK_LENGTH;
-    tf.orient = tf.orient.slerp(&wanted_orient, lerp_speed);
+    tf.orient = tf.orient.slerp(&wanted_orient, lerp_speed * 2.);
 
     // Horizontal thrusters
     let horiz_force = nearest_ctrlp.orient * Vector3::z();
