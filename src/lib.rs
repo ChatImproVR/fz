@@ -3,7 +3,7 @@ use std::f32::consts::{FRAC_PI_2, PI};
 use cimvr_common::{
     desktop::InputEvents,
     gamepad::{Axis, GamepadState},
-    nalgebra::{Isometry3, Matrix3, Point3, UnitQuaternion, Vector3},
+    nalgebra::{Isometry3, Matrix3, Point3, UnitQuaternion, Vector3, ComplexField},
     render::{CameraComponent, Mesh, MeshHandle, Primitive, Render, UploadMesh, Vertex},
     utils::camera::Perspective,
     vr::VrUpdate,
@@ -317,14 +317,18 @@ fn ship_controller(
 
     // Collision detection
     const TRACK_WIDTH: f32 = 32.;
-    const TRACK_HEIGHT: f32 = 10.;
+    const TRACK_HEIGHT: f32 = 20.;
     const TRACK_LENGTH: f32 = 10.;
     let z_bound = path_local_space.translation.z.abs() > TRACK_WIDTH / 2.;
     let y_bound = path_local_space.translation.y.abs() > TRACK_HEIGHT / 2.;
     if z_bound || y_bound {
-        *tf = nearest_ctrlp;
-        kt.ang_vel = Vector3::zeros();
-        kt.vel = Vector3::zeros();
+        let mut v = nearest_iso.inverse() * -kt.vel;
+        v.x = v.x.abs();
+        kt.vel = nearest_iso * v;
+
+        //*tf = nearest_ctrlp;
+        //kt.ang_vel = Vector3::zeros();
+        //kt.vel = Vector3::zeros();
     }
 
     // Force controls
