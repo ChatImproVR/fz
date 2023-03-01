@@ -361,7 +361,7 @@ fn ship_controller(
     // Horizontal thrusters
     let horiz_force = nearest_ctrlp.orient * Vector3::z();
 
-    let available_power = (track_rel_vel.x.abs() + track_rel_vel.z.abs() + 1.).min(500.);
+    let available_power = (track_rel_vel.x.abs().powf(1.1) + track_rel_vel.z.abs() + 1.).min(500.);
     kt.vel += horiz_force * dt * available_power * (desired_roll * PI / 2.).sin();
 
     // Zero velocity component in the y direction relative to the track
