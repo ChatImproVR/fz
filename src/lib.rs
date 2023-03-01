@@ -313,6 +313,7 @@ fn ship_controller(
     // Collision detection
     const TRACK_WIDTH: f32 = 32.;
     const TRACK_HEIGHT: f32 = 10.;
+    const TRACK_LENGTH: f32 = 10.;
     let z_bound = path_local_space.translation.z.abs() > TRACK_WIDTH / 2.;
     let y_bound = path_local_space.translation.y.abs() > TRACK_HEIGHT / 2.;
     if z_bound || y_bound {
@@ -347,20 +348,24 @@ fn ship_controller(
         0.
     };
 
-    // Follow path
+    // Follow pathdirection smoothly
     let future_pt = path.lerp(nearest_ctrlp_idx as f32 + 1.5);
     let wanted_orient = future_pt.orient * UnitQuaternion::from_euler_angles(desired_roll_radians, 0., 0.);
 
-    tf.orient = wanted_orient;
+    let forward_vel = (tf.orient.inverse() * kt.vel).x.abs();
+    tf.orient = tf.orient.slerp(&wanted_orient, forward_vel * dt / TRACK_LENGTH);
 
+    // Horizontal thrusters
     let mut horiz_thrust = path_local_space * Vector3::y();
     horiz_thrust.y = 0.0;
     let horiz_thrust = nearest_iso * horiz_thrust;
 
+    kt.vel += horiz_thrust * forward_vel.powi(1) * dt * 5.;
+
+    // Lock Y pos
     let wanted_y = nearest_ctrlp.pos.y;
     tf.pos.y = wanted_y;
 
-    kt.vel += horiz_thrust * kt.vel.magnitude() * dt;
 }
 
 impl ServerState {
