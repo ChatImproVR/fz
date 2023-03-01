@@ -3,7 +3,7 @@ use std::f32::consts::FRAC_PI_2;
 use cimvr_common::{
     desktop::InputEvents,
     gamepad::{Axis, GamepadState},
-    nalgebra::{Matrix3, Point3, UnitQuaternion, Vector3},
+    nalgebra::{Matrix3, Point3, UnitQuaternion, Vector3, Isometry3},
     render::{CameraComponent, Mesh, MeshHandle, Primitive, Render, UploadMesh, Vertex},
     utils::camera::Perspective,
     vr::VrUpdate,
@@ -309,14 +309,27 @@ fn ship_controller(
     let yaw_pitch_deadzone = 0.1;
     let roll_deadzone = 0.8;
     let ang_damping = 8.;
-    let forward_damping = 1.;
+    //let forward_damping = 1.;
     let throttle_deadzone = 0.1;
     let ang_multiplier = 0.3;
     let centering_mul = 80.;
 
     // Calculate wanted rotation to match the course
-    let nearest_ctrlp = path.nearest_ctrlp(tf.pos);
+    let nearest_ctrlp = path.ctrlps[path.nearest_ctrlp(tf.pos)];
+    let nearest_iso: Isometry3<f32> = nearest_ctrlp.into();
+    let path_local_space = nearest_iso.inverse() * tf.pos;
+    dbg!(path_local_space);
 
+    // Collision detection
+    const TRACK_WIDTH: f32 = 32.;
+    const TRACK_HEIGHT: f32 = 10.;
+    if path_local_space.z.abs() > TRACK_WIDTH / 2. || path_local_space.y.abs() > TRACK_HEIGHT / 2. {
+        *tf = nearest_ctrlp;
+        kt.ang_vel = Vector3::zeros();
+        kt.vel = Vector3::zeros();
+    }
+
+    /*
     // Angular controls
     // Decide if the user wants control
     let ang_live =
@@ -352,25 +365,29 @@ fn ship_controller(
             kt.torque(ang_impulse * dt);
         }
     }
+    */
+    kt.ang_vel = Vector3::zeros();
 
     // Force controls
-    let force_live = input.throttle > throttle_deadzone;
+    let force_live = input.throttle.abs() > throttle_deadzone;
     let wanted_impulse = if force_live {
         tf.orient * Vector3::x() * input.throttle * ship.max_impulse
     } else {
-        -kt.vel * forward_damping
+        Vector3::zeros()
     };
 
-    let path_forward = path.ctrlps[nearest_ctrlp].orient * Vector3::x();
+    /*let path_forward = path.ctrlps[nearest_ctrlp].orient * Vector3::x();
     let proj = path_forward.dot(&kt.vel);
     let intertial_damp = -(kt.vel - proj * path_forward);
     let wanted_impulse = wanted_impulse + proj * intertial_damp;
+    */
 
+    // Apply directional impulse
     if wanted_impulse != Vector3::zeros() {
         let total_impulse = wanted_impulse.magnitude().min(ship.max_impulse);
         if let Some(norm) = wanted_impulse.try_normalize(f32::EPSILON) {
             let impulse = total_impulse * norm;
-            kt.force(impulse * dt);
+            kt.force(dbg!(impulse * dt));
         }
     }
 }
