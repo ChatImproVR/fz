@@ -69,11 +69,14 @@ fn orientations(mesh: &Mesh) -> Vec<Transform> {
     transforms
 }
 
+const ENV_OBJ: &str = include_str!("assets/loop1_env.obj");
+const PATH_OBJ: &str = include_str!("assets/loop1_path.obj");
+
 impl UserState for ClientState {
     // Implement a constructor
     fn new(io: &mut EngineIo, sched: &mut EngineSchedule<Self>) -> Self {
         //let mesh = obj_lines_to_mesh(include_str!("assets/ship.obj"));
-        let environment_mesh = obj_lines_to_mesh(include_str!("assets/environment.obj"));
+        let environment_mesh = obj_lines_to_mesh(ENV_OBJ);
         io.send(&UploadMesh {
             mesh: environment_mesh,
             id: MAP_RDR,
@@ -233,7 +236,7 @@ impl UserState for ServerState {
         */
 
         // Parse path mesh
-        let path_mesh = obj_lines_to_mesh(include_str!("assets/path.obj"));
+        let path_mesh = obj_lines_to_mesh(PATH_OBJ);
         let transforms = orientations(&path_mesh);
         let path = Path::new(transforms);
 
