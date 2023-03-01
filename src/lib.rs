@@ -350,7 +350,7 @@ fn ship_controller(
 
     // Follow pathdirection smoothly
     let future_pt = path.lerp(nearest_ctrlp_idx as f32 + 3.5);
-    let wanted_orient = future_pt.orient * UnitQuaternion::from_euler_angles(desired_roll * PI/16., 0., 0.);
+    let wanted_orient = future_pt.orient * UnitQuaternion::from_euler_angles(desired_roll * PI/12., 0., 0.);
 
     let track_rel_vel = nearest_ctrlp.orient.inverse() * kt.vel;
     let lerp_speed = dt * track_rel_vel.x / TRACK_LENGTH;
@@ -367,8 +367,12 @@ fn ship_controller(
 
     // Lock Y pos to track
     let wanted_y = nearest_ctrlp.pos.y;
-    tf.pos.y = wanted_y;
+    tf.pos.y = lerp(tf.pos.y, wanted_y, lerp_speed);
 
+}
+
+fn lerp(a: f32, b: f32, t: f32) -> f32 {
+    (1. - t) * a + t * b
 }
 
 impl ServerState {
