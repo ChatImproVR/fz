@@ -342,29 +342,30 @@ fn ship_controller(
 
     // Roll input
     let roll_deadzone = 0.05;
-    let desired_roll_radians = if input.roll.abs() > roll_deadzone {
-        input.roll * PI / 8.
+    let desired_roll = if input.roll.abs() > roll_deadzone {
+        input.roll
     } else {
         0.
     };
 
     // Follow pathdirection smoothly
     let future_pt = path.lerp(nearest_ctrlp_idx as f32 + 3.5);
-    let wanted_orient = future_pt.orient * UnitQuaternion::from_euler_angles(desired_roll_radians, 0., 0.);
-
-    let forward_vel = (tf.orient.inverse() * kt.vel).x.abs();
-    tf.orient = tf.orient.slerp(&wanted_orient, forward_vel * dt / TRACK_LENGTH);
-
-    // Horizontal thrusters
-    let local_vel = tf.orient.inverse() * kt.vel;
-    let horiz_thrust_available = (path_local_space * Vector3::y()).z;
+    let wanted_orient = future_pt.orient * UnitQuaternion::from_euler_angles(desired_roll * PI/16., 0., 0.);
 
     let track_rel_vel = nearest_ctrlp.orient.inverse() * kt.vel;
-    let track_un_force = nearest_ctrlp.orient * (track_rel_vel.z * Vector3::z());
+    let lerp_speed = dt * track_rel_vel.x / TRACK_LENGTH;
+    tf.orient = tf.orient.slerp(&wanted_orient, lerp_speed);
 
-    kt.vel += -track_un_force * dt * kt.vel.magnitude() * desired_roll_radians.sin().abs();;
+    // Horizontal thrusters
+    let horiz_force = nearest_ctrlp.orient * Vector3::z();
 
-    // Lock Y pos
+    let available_power = (track_rel_vel.x.abs() + track_rel_vel.z.abs() + 1.).min(500.);
+    kt.vel += horiz_force * dt * available_power * (desired_roll * PI / 2.).sin();
+
+    // Zero velocity component in the y direction relative to the track
+    kt.vel -= nearest_ctrlp.orient * Vector3::y() * track_rel_vel.y;
+
+    // Lock Y pos to track
     let wanted_y = nearest_ctrlp.pos.y;
     tf.pos.y = wanted_y;
 
