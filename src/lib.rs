@@ -1,9 +1,9 @@
-use std::f32::consts::FRAC_PI_2;
+use std::f32::consts::{FRAC_PI_2, PI};
 
 use cimvr_common::{
     desktop::InputEvents,
     gamepad::{Axis, GamepadState},
-    nalgebra::{Matrix3, Point3, UnitQuaternion, Vector3, Isometry3},
+    nalgebra::{Isometry3, Matrix3, Point3, UnitQuaternion, Vector3},
     render::{CameraComponent, Mesh, MeshHandle, Primitive, Render, UploadMesh, Vertex},
     utils::camera::Perspective,
     vr::VrUpdate,
@@ -303,84 +303,31 @@ fn ship_controller(
     tf: &mut Transform,
     kt: &mut KinematicPhysics,
 ) {
-    // Control vector
-    let ang_control = Vector3::new(input.roll, -input.yaw, -input.pitch);
-
-    let yaw_pitch_deadzone = 0.1;
-    let roll_deadzone = 0.8;
-    let ang_damping = 8.;
-    //let forward_damping = 1.;
-    let throttle_deadzone = 0.1;
-    let ang_multiplier = 0.3;
-    let centering_mul = 80.;
-
-    // Calculate wanted rotation to match the course
-    let nearest_ctrlp = path.ctrlps[path.nearest_ctrlp(tf.pos)];
+    // Calculate position within the course
+    let nearest_ctrlp_idx = path.nearest_ctrlp(tf.pos);
+    let nearest_ctrlp = path.ctrlps[nearest_ctrlp_idx];
     let nearest_iso: Isometry3<f32> = nearest_ctrlp.into();
     let path_local_space = nearest_iso.inverse() * tf.pos;
-    dbg!(path_local_space);
 
     // Collision detection
     const TRACK_WIDTH: f32 = 32.;
     const TRACK_HEIGHT: f32 = 10.;
-    if path_local_space.z.abs() > TRACK_WIDTH / 2. || path_local_space.y.abs() > TRACK_HEIGHT / 2. {
+    let z_bound = path_local_space.z.abs() > TRACK_WIDTH / 2.;
+    let y_bound = path_local_space.y.abs() > TRACK_HEIGHT / 2.;
+    if z_bound || y_bound {
         *tf = nearest_ctrlp;
         kt.ang_vel = Vector3::zeros();
         kt.vel = Vector3::zeros();
     }
 
-    /*
-    // Angular controls
-    // Decide if the user wants control
-    let ang_live =
-        ang_control.yz().magnitude() > yaw_pitch_deadzone || ang_control.x.abs() > roll_deadzone;
-
-    let wanted_ang_impulse = if ang_live {
-        // Angular impulse
-        tf.orient * ang_control * ship.max_twirl * ang_multiplier
-    } else {
-        // Align with path direction
-        let lookahead_ctrlp = (nearest_ctrlp + 2) % path.ctrlps.len();
-        let ahead = path.ctrlps[lookahead_ctrlp];
-        let ahead_offset = ahead.pos - tf.pos;
-
-        let current_dir = tf.orient * Vector3::x();
-
-        let wanted_rotation = UnitQuaternion::rotation_between(&current_dir, &ahead_offset)
-            .unwrap_or(UnitQuaternion::identity());
-        let (r, p, y) = wanted_rotation.euler_angles();
-        let centering = Vector3::new(r, p, y) * centering_mul;
-
-        // Rotation damping
-        let damping = -kt.ang_vel * ang_damping;
-
-        centering + damping
-    };
-
-    // Apply angular impulse
-    if wanted_ang_impulse != Vector3::zeros() {
-        let total_ang_impulse = wanted_ang_impulse.magnitude().min(ship.max_twirl);
-        if let Some(ang_norm) = wanted_ang_impulse.try_normalize(f32::EPSILON) {
-            let ang_impulse = total_ang_impulse * ang_norm;
-            kt.torque(ang_impulse * dt);
-        }
-    }
-    */
-    kt.ang_vel = Vector3::zeros();
-
     // Force controls
+    let throttle_deadzone = 0.1;
     let force_live = input.throttle.abs() > throttle_deadzone;
     let wanted_impulse = if force_live {
         tf.orient * Vector3::x() * input.throttle * ship.max_impulse
     } else {
         Vector3::zeros()
     };
-
-    /*let path_forward = path.ctrlps[nearest_ctrlp].orient * Vector3::x();
-    let proj = path_forward.dot(&kt.vel);
-    let intertial_damp = -(kt.vel - proj * path_forward);
-    let wanted_impulse = wanted_impulse + proj * intertial_damp;
-    */
 
     // Apply directional impulse
     if wanted_impulse != Vector3::zeros() {
@@ -390,6 +337,20 @@ fn ship_controller(
             kt.force(dbg!(impulse * dt));
         }
     }
+
+    // Roll input
+    let roll_deadzone = 0.05;
+    let desired_roll_radians = if input.roll.abs() > roll_deadzone {
+        input.roll * PI / 8.
+    } else {
+        0.
+    };
+
+    // Follow path
+    let future_pt = path.lerp(nearest_ctrlp_idx as f32 + 1.5);
+    let wanted_orient = future_pt.orient * UnitQuaternion::from_euler_angles(desired_roll_radians, 0., 0.);
+
+    tf.orient = wanted_orient;
 }
 
 impl ServerState {
@@ -413,7 +374,14 @@ impl ServerState {
             io.add_component(self.cube_ent, &path_transf);
 
             // Step ship forward in time
-            ship_controller(dt, self.ship, self.last_input_state, &self.path, &mut tf, &mut kt);
+            ship_controller(
+                dt,
+                self.ship,
+                self.last_input_state,
+                &self.path,
+                &mut tf,
+                &mut kt,
+            );
 
             query.write(self.ship_ent, &kt);
             query.write(self.ship_ent, &tf);
