@@ -1,4 +1,7 @@
-use std::f32::consts::{FRAC_PI_2, PI};
+use std::{
+    collections::{HashMap, HashSet},
+    f32::consts::{FRAC_PI_2, PI},
+};
 
 use cimvr_common::{
     desktop::InputEvents,
@@ -23,6 +26,7 @@ use curve::Path;
 // All state associated with client-side behaviour
 struct ClientState {
     proj: Perspective,
+    camera_ent: EntityId,
 }
 
 pub const SHIP_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Ship"));
@@ -94,6 +98,12 @@ impl UserState for ClientState {
             id: SHIP_RDR,
         });
 
+        // Add camera
+        let camera_ent = io.create_entity();
+        io.add_component(camera_ent, &Transform::identity());
+        io.add_component(camera_ent, &CameraComponent::default());
+        io.add_component(camera_ent, &Synchronized);
+
         // Upload cube
         io.send(&UploadMesh {
             mesh: cube(),
@@ -106,7 +116,8 @@ impl UserState for ClientState {
                 .subscribe::<InputEvents>()
                 .subscribe::<VrUpdate>()
                 .subscribe::<FrameTime>()
-                .query::<CameraComponent>(Access::Write),
+                .query::<CameraComponent>(Access::Write)
+                .query::<Transform>(Access::Write),
         );
 
         sched.add_system(
@@ -116,6 +127,7 @@ impl UserState for ClientState {
 
         Self {
             proj: Perspective::new(),
+            camera_ent,
         }
     }
 }
@@ -143,6 +155,16 @@ impl ClientState {
                 },
             );
         }
+
+        let ship_transf: Transform = query.read(self.ship_ent);
+
+        let cam_pos = Transform::new()
+            .with_rotation(UnitQuaternion::from_euler_angles(0., -FRAC_PI_2, 0.))
+            .with_position(Point3::new(-13., 2., 0.));
+
+        let cam_transf = ship_transf * cam_pos;
+
+        io.add_component(self.camera_ent, &cam_transf);
     }
 
     fn controller_input(&mut self, io: &mut EngineIo, _query: &mut QueryResult) {
@@ -161,19 +183,22 @@ impl ClientState {
     }
 }
 
+struct ConnectedClient {
+    last_input_state: InputAbstraction,
+}
+
 // All state associated with server-side behaviour
 struct ServerState {
     n: usize,
     path: Path,
-    ship: ShipCharacteristics,
-    ship_ent: EntityId,
-    camera_ent: EntityId,
-    cube_ent: EntityId,
-    last_input_state: InputAbstraction,
+    motion_cfg: ShipCharacteristics,
+    clients: HashMap<ClientId, InputAbstraction>,
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Copy, Clone)]
-struct ShipComponent;
+/// Denotes a ship corresponding to a client
+#[derive(serde::Serialize, serde::Deserialize, Copy, Clone, PartialEq, Eq)]
+struct ShipComponent(ClientId);
+
 impl Component for ShipComponent {
     const ID: ComponentIdStatic = ComponentIdStatic {
         id: pkg_namespace!("Ship"),
@@ -184,28 +209,6 @@ impl Component for ShipComponent {
 impl UserState for ServerState {
     // Implement a constructor
     fn new(io: &mut EngineIo, sched: &mut EngineSchedule<Self>) -> Self {
-        // Add ship
-        let ship_ent = io.create_entity();
-        io.add_component(ship_ent, &Transform::identity());
-        io.add_component(ship_ent, &Render::new(SHIP_RDR).primitive(Primitive::Lines));
-        io.add_component(ship_ent, &Synchronized);
-        io.add_component(ship_ent, &ShipComponent);
-        io.add_component(
-            ship_ent,
-            &KinematicPhysics {
-                vel: Vector3::zeros(),
-                mass: 1.,
-                ang_vel: Vector3::zeros(),
-                moment: 1.,
-            },
-        );
-
-        // Add camera
-        let camera_ent = io.create_entity();
-        io.add_component(camera_ent, &Transform::identity());
-        io.add_component(camera_ent, &CameraComponent::default());
-        io.add_component(camera_ent, &Synchronized);
-
         // Add environment
         let env_ent = io.create_entity();
         io.add_component(env_ent, &Transform::identity());
@@ -224,21 +227,18 @@ impl UserState for ServerState {
         );
         io.add_component(floor_ent, &Synchronized);
 
-        // Create a cube
-        let cube_ent = io.create_entity();
-        /*
-        io.add_component(cube_ent, &Transform::default());
-        io.add_component(
-            cube_ent,
-            &Render::new(CUBE_HANDLE).primitive(Primitive::Triangles),
-        );
-        io.add_component(cube_ent, &Synchronized);
-        */
-
         // Parse path mesh
         let path_mesh = obj_lines_to_mesh(PATH_OBJ);
         let transforms = orientations(&path_mesh);
         let path = Path::new(transforms);
+
+        // Add connection monitoring
+        sched.add_system(
+            Self::conn_update,
+            SystemDescriptor::new(Stage::PreUpdate)
+                .subscribe::<Connections>()
+                .query::<ShipComponent>(Access::Write),
+        );
 
         // Add gamepad/keyboard input system
         sched.add_system(
@@ -248,23 +248,20 @@ impl UserState for ServerState {
 
         // Add physics system
         sched.add_system(
+            Self::motion_update,
+            SystemDescriptor::new(Stage::Update)
+                .query::<Transform>(Access::Write)
+                .query::<KinematicPhysics>(Access::Write)
+                .query::<ShipComponent>(Access::Read)
+                .subscribe::<FrameTime>(),
+        );
+
+        // Add physics system
+        sched.add_system(
             Self::kinematics_update,
             SystemDescriptor::new(Stage::Update)
                 .query::<Transform>(Access::Write)
                 .query::<KinematicPhysics>(Access::Write)
-                .subscribe::<FrameTime>(),
-        );
-
-        // NOTE: Camera update happens after kinematics update so it doesn't lag behind in quick
-        // action!
-        sched.add_system(
-            Self::camera_update,
-            SystemDescriptor::new(Stage::Update)
-                .query::<Transform>(Access::Read)
-                // Here we're using the ShipComponent as a filter, so the engine doesn't have to
-                // send us a tone of data! We DON'T have to use a component to set the camera's
-                // position, because we can abuse add_component()...
-                .query::<ShipComponent>(Access::Read)
                 .subscribe::<FrameTime>(),
         );
 
@@ -277,14 +274,78 @@ impl UserState for ServerState {
         };
 
         Self {
-            camera_ent,
-            cube_ent,
             last_input_state: InputAbstraction::default(),
-            ship,
+            motion_cfg: ship,
             n: 0,
             path,
-            ship_ent,
         }
+    }
+}
+
+impl ServerState {
+    fn conn_update(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
+        if let Some(Connections { clients }) = io.inbox_first() {
+            for client in clients {
+                let found_ship = query
+                    .iter()
+                    .find(|&ent| query.read::<ShipComponent>(ent) == ShipComponent(client));
+
+                if found_ship.is_none() {
+                    // Add ship
+                    let ship_ent = io.create_entity();
+                    io.add_component(ship_ent, &Transform::identity());
+                    io.add_component(ship_ent, &Render::new(SHIP_RDR).primitive(Primitive::Lines));
+                    io.add_component(ship_ent, &Synchronized);
+                    io.add_component(ship_ent, &ShipComponent(client));
+                    io.add_component(
+                        ship_ent,
+                        &KinematicPhysics {
+                            vel: Vector3::zeros(),
+                            mass: 1.,
+                            ang_vel: Vector3::zeros(),
+                            moment: 1.,
+                        },
+                    );
+                }
+            }
+        }
+    }
+
+    fn input_update(&mut self, io: &mut EngineIo, _query: &mut QueryResult) {
+        for (client_id, input) in io.inbox_clients::<InputAbstraction>() {
+            self.clients.insert(client_id, input);
+        }
+    }
+
+    fn motion_update(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
+        let Some(FrameTime { delta, .. }) = io.inbox_first() else { return };
+
+        for ship_ent in query.iter() {
+            // Get current physical properties
+            let mut kt: KinematicPhysics = query.read(ship_ent);
+            let mut tf: Transform = query.read(ship_ent);
+            let ShipComponent(client_id) = query.read(ship_ent);
+
+            let input = *self
+                .clients
+                .entry(client_id)
+                .or_insert(InputAbstraction::default());
+
+            // Step ship forward in time
+            ship_controller(delta, self.motion_cfg, input, &self.path, &mut tf, &mut kt);
+
+            query.write(ship_ent, &kt);
+            query.write(ship_ent, &tf);
+        }
+    }
+
+    /// Simulate kinematics
+    fn kinematics_update(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
+        let Some(FrameTime { delta, .. }) = io.inbox_first() else { return };
+        kinematics::simulate(query, delta);
+
+        //let gravity = Vector3::y() * -0.5;
+        //kinematics::gravity(query, dt, gravity);
     }
 }
 
@@ -355,7 +416,8 @@ fn ship_controller(
 
     // Follow pathdirection smoothly
     let future_pt = path.lerp(nearest_ctrlp_idx as f32 + 3.5);
-    let wanted_orient = future_pt.orient * UnitQuaternion::from_euler_angles(desired_roll * PI/16., 0., 0.);
+    let wanted_orient =
+        future_pt.orient * UnitQuaternion::from_euler_angles(desired_roll * PI / 16., 0., 0.);
 
     let track_rel_vel = nearest_ctrlp.orient.inverse() * kt.vel;
     let lerp_speed = dt * track_rel_vel.x / TRACK_LENGTH;
@@ -373,67 +435,10 @@ fn ship_controller(
     // Lock Y pos to track
     let wanted_y = nearest_ctrlp.pos.y;
     tf.pos.y = lerp(tf.pos.y, wanted_y, lerp_speed);
-
 }
 
 fn lerp(a: f32, b: f32, t: f32) -> f32 {
     (1. - t) * a + t * b
-}
-
-impl ServerState {
-    fn input_update(&mut self, io: &mut EngineIo, _query: &mut QueryResult) {
-        for input in io.inbox::<InputAbstraction>() {
-            self.last_input_state = input
-        }
-    }
-
-    fn kinematics_update(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
-        if let Some(FrameTime { delta, .. }) = io.inbox_first() {
-            let dt = delta;
-
-            // Get current physical properties
-            let mut kt: KinematicPhysics = query.read(self.ship_ent);
-            let mut tf: Transform = query.read(self.ship_ent);
-
-            // Move the cube
-            let nearest_ctrlp = self.path.nearest_ctrlp(tf.pos);
-            let path_transf = self.path.ctrlps[nearest_ctrlp];
-            io.add_component(self.cube_ent, &path_transf);
-
-            // Step ship forward in time
-            ship_controller(
-                dt,
-                self.ship,
-                self.last_input_state,
-                &self.path,
-                &mut tf,
-                &mut kt,
-            );
-
-            query.write(self.ship_ent, &kt);
-            query.write(self.ship_ent, &tf);
-
-            //let gravity = Vector3::y() * -0.5;
-            //kinematics::gravity(query, dt, gravity);
-
-            // Simulate kinematics
-            kinematics::simulate(query, dt);
-        } else {
-            println!("Expected FrameTime message!");
-        }
-    }
-
-    fn camera_update(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
-        let ship_transf: Transform = query.read(self.ship_ent);
-
-        let cam_pos = Transform::new()
-            .with_rotation(UnitQuaternion::from_euler_angles(0., -FRAC_PI_2, 0.))
-            .with_position(Point3::new(-13., 2., 0.));
-
-        let cam_transf = ship_transf * cam_pos;
-
-        io.add_component(self.camera_ent, &cam_transf);
-    }
 }
 
 // Defines entry points for the engine to hook into.
