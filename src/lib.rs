@@ -4,7 +4,7 @@ use std::{
 };
 
 use cimvr_common::{
-    desktop::InputEvents,
+    desktop::{InputEvents, KeyboardEvent, InputEvent, ElementState, KeyCode},
     gamepad::{Axis, GamepadState},
     nalgebra::{Isometry3, Matrix3, Point3, UnitQuaternion, Vector3},
     render::{CameraComponent, Mesh, MeshHandle, Primitive, Render, UploadMesh, Vertex},
@@ -28,6 +28,10 @@ struct ClientState {
     proj: Perspective,
     camera_ent: EntityId,
     ship_ent: Option<EntityId>,
+    w_is_pressed: bool,
+    a_is_pressed: bool,
+    s_is_pressed: bool,
+    d_is_pressed: bool,
 }
 
 pub const SHIP_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Ship"));
@@ -123,13 +127,19 @@ impl UserState for ClientState {
 
         sched.add_system(
             Self::controller_input,
-            SystemDescriptor::new(Stage::PreUpdate).subscribe::<GamepadState>(),
+            SystemDescriptor::new(Stage::PreUpdate)
+                .subscribe::<GamepadState>()
+                .subscribe::<InputEvents>(),
         );
 
         Self {
             proj: Perspective::new(),
             camera_ent,
             ship_ent: None,
+            w_is_pressed: false,
+            a_is_pressed: false,
+            s_is_pressed: false,
+            d_is_pressed: false,
         }
     }
 }
@@ -187,6 +197,37 @@ impl ClientState {
                 input.pitch = gamepad.axes[&Axis::LeftStickY];
                 input.roll = gamepad.axes[&Axis::LeftStickX];
                 input.throttle = gamepad.axes[&Axis::RightStickY];
+            }
+        }
+
+        if let Some(InputEvents(events)) = io.inbox_first() {
+            for event in events {
+                if let InputEvent::Keyboard(KeyboardEvent::Key { key, state }) = event {
+                    let is_pressed = state == ElementState::Pressed;
+                    match key {
+                        KeyCode::W => self.w_is_pressed = is_pressed,
+                        KeyCode::A => self.a_is_pressed = is_pressed,
+                        KeyCode::S => self.s_is_pressed = is_pressed,
+                        KeyCode::D => self.d_is_pressed = is_pressed,
+                        _ => (),
+                    }
+                }
+            }
+
+            if self.w_is_pressed {
+                input.throttle = 1.0;
+            }
+
+            if self.s_is_pressed {
+                input.throttle = -1.0;
+            }
+
+            if self.a_is_pressed {
+                input.roll = -1.0;
+            }
+
+            if self.d_is_pressed {
+                input.roll = 1.0;
             }
         }
 
