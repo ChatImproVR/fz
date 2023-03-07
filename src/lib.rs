@@ -334,7 +334,7 @@ impl ServerState {
             for client in clients {
                 let found_ship = query
                     .iter()
-                    .find(|&ent| query.read::<ShipComponent>(ent) == ShipComponent(client));
+                    .find(|&ent| query.read::<ShipComponent>(ent) == ShipComponent(client.id));
 
                 let ship_ent;
                 if let Some(ent) = found_ship {
@@ -345,7 +345,7 @@ impl ServerState {
                     io.add_component(ship_ent, &Transform::identity());
                     io.add_component(ship_ent, &Render::new(SHIP_RDR).primitive(Primitive::Lines));
                     io.add_component(ship_ent, &Synchronized);
-                    io.add_component(ship_ent, &ShipComponent(client));
+                    io.add_component(ship_ent, &ShipComponent(client.id));
                     io.add_component(
                         ship_ent,
                         &KinematicPhysics {
@@ -357,7 +357,7 @@ impl ServerState {
                     );
                 }
 
-                io.send_to_client(&ShipIdMessage(ship_ent), client);
+                io.send_to_client(&ShipIdMessage(ship_ent), client.id);
             }
         }
     }
