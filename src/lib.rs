@@ -331,7 +331,7 @@ impl UserState for ServerState {
 impl ServerState {
     fn conn_update(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
         if let Some(Connections { clients }) = io.inbox_first() {
-            for client in clients {
+            for client in &clients {
                 let found_ship = query
                     .iter()
                     .find(|&ent| query.read::<ShipComponent>(ent) == ShipComponent(client.id));
@@ -340,7 +340,7 @@ impl ServerState {
                 if let Some(ent) = found_ship {
                     ship_ent = ent;
                 } else {
-                    // Add ship
+                    // Add ship for newly connected client
                     ship_ent = io.create_entity();
                     io.add_component(ship_ent, &Transform::identity());
                     io.add_component(ship_ent, &Render::new(SHIP_RDR).primitive(Primitive::Lines));
@@ -357,7 +357,17 @@ impl ServerState {
                     );
                 }
 
+                // Tell the client which ship entity to track...
                 io.send_to_client(&ShipIdMessage(ship_ent), client.id);
+            }
+
+            // Remove ships of disconnected clients
+            for ship_ent in query.iter() {
+                let ShipComponent(client_id) = query.read(ship_ent);
+                let found_client = clients.iter().find(|c| c.id == client_id);
+                if found_client.is_none() {
+                    io.remove_entity(ship_ent);
+                }
             }
         }
     }
