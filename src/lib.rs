@@ -243,14 +243,11 @@ struct ServerState {
 }
 
 /// Denotes a ship corresponding to a client
-#[derive(serde::Serialize, serde::Deserialize, Copy, Clone, PartialEq, Eq)]
+#[derive(serde::Serialize, serde::Deserialize, Default, Copy, Clone, PartialEq, Eq)]
 struct ShipComponent(ClientId);
 
 impl Component for ShipComponent {
-    const ID: ComponentIdStatic = ComponentIdStatic {
-        id: pkg_namespace!("Ship"),
-        size: 4,
-    };
+    const ID: &'static str = pkg_namespace!("Ship");
 }
 
 impl UserState for ServerState {

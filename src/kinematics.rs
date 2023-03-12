@@ -4,7 +4,7 @@ use nalgebra::{Vector3, UnitQuaternion};
 use serde::{Deserialize, Serialize};
 
 /// Component for objects simulated with the kinematics system
-#[derive(Serialize, Deserialize, Copy, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Default, Copy, Clone, Debug, PartialEq)]
 pub struct KinematicPhysics {
     /// Velocity
     pub vel: Vector3<f32>,
@@ -57,8 +57,5 @@ pub fn gravity(query: &mut QueryResult, dt: f32, g: Vector3<f32>) {
 }
 
 impl Component for KinematicPhysics {
-    const ID: ComponentIdStatic = ComponentIdStatic {
-        id: pkg_namespace!("KinematicPhysics"),
-        size: 48,
-    };
+    const ID: &'static str = pkg_namespace!("KinematicPhysics");
 }
