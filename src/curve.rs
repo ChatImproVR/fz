@@ -1,7 +1,4 @@
-use cimvr_common::{
-    nalgebra::{Isometry3, Point3},
-    Transform,
-};
+use cimvr_common::{glam::Vec3, Transform};
 
 pub struct Path {
     pub ctrlps: Vec<Transform>,
@@ -32,12 +29,12 @@ impl Path {
 
     /// Estimates the nearest curve index `t` to the given 3D position.
     /// Increasing iterations increases accuracy at the cost of performance
-    pub fn nearest_ctrlp(&self, pt: Point3<f32>) -> usize {
+    pub fn nearest_ctrlp(&self, pt: Vec3) -> usize {
         let mut smallest_idx = 0;
         let mut smallest_dist = f32::MAX;
 
         for (idx, ctrlpt) in self.ctrlps.iter().enumerate() {
-            let dist = (ctrlpt.pos - pt).magnitude();
+            let dist = (ctrlpt.pos - pt).length();
             if dist < smallest_dist {
                 smallest_dist = dist;
                 smallest_idx = idx;
@@ -50,7 +47,8 @@ impl Path {
 
 /// Interpolate between transforms
 pub fn trans_lerp_slerp(a: Transform, b: Transform, t: f32) -> Transform {
-    let a: Isometry3<f32> = a.into();
-    let b: Isometry3<f32> = b.into();
-    a.lerp_slerp(&b, t).into()
+    Transform {
+        pos: a.pos.lerp(b.pos, t),
+        orient: a.orient.slerp(b.orient, t),
+    }
 }
