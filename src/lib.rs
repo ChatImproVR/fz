@@ -41,7 +41,8 @@ pub const CUBE_HANDLE: MeshHandle = MeshHandle::new(pkg_namespace!("Cube"));
 // Need a function which can turn a position in 3D and a previous value, and return a next value
 // This value correspondss to the curve interpolation over the whole shibam
 
-#[derive(Serialize, Deserialize, Debug, Default, Clone, Copy)]
+#[derive(Message, Serialize, Deserialize, Debug, Default, Clone, Copy)]
+#[locality("Remote")]
 struct InputAbstraction {
     /// Desired pitching power
     pitch: f32,
@@ -104,8 +105,8 @@ impl UserState for ClientState {
 
         // Add camera
         let camera_ent = io.create_entity();
-        io.add_component(camera_ent, &Transform::identity());
-        io.add_component(camera_ent, &CameraComponent::default());
+        io.add_component(camera_ent, Transform::identity());
+        io.add_component(camera_ent, CameraComponent::default());
 
         // Upload cube
         io.send(&UploadMesh {
@@ -160,7 +161,7 @@ impl ClientState {
 
         io.add_component(
             self.camera_ent,
-            &CameraComponent {
+            CameraComponent {
                 clear_color,
                 projection,
             },
@@ -183,7 +184,7 @@ impl ClientState {
 
             let cam_transf = ship_transf * cam_pos;
 
-            io.add_component(self.camera_ent, &cam_transf);
+            io.add_component(self.camera_ent, cam_transf);
         }
     }
 
@@ -242,33 +243,29 @@ struct ServerState {
 }
 
 /// Denotes a ship corresponding to a client
-#[derive(serde::Serialize, serde::Deserialize, Default, Copy, Clone, PartialEq, Eq)]
+#[derive(Component, serde::Serialize, serde::Deserialize, Default, Copy, Clone, PartialEq, Eq)]
 struct ShipComponent(ClientId);
-
-impl Component for ShipComponent {
-    const ID: &'static str = pkg_namespace!("Ship");
-}
 
 impl UserState for ServerState {
     // Implement a constructor
     fn new(io: &mut EngineIo, sched: &mut EngineSchedule<Self>) -> Self {
         // Add environment
         let env_ent = io.create_entity();
-        io.add_component(env_ent, &Transform::identity());
-        io.add_component(env_ent, &Render::new(MAP_RDR).primitive(Primitive::Lines));
-        io.add_component(env_ent, &Synchronized);
+        io.add_component(env_ent, Transform::identity());
+        io.add_component(env_ent, Render::new(MAP_RDR).primitive(Primitive::Lines));
+        io.add_component(env_ent, Synchronized);
 
         // Add floor
         let floor_ent = io.create_entity();
         io.add_component(
             floor_ent,
-            &Transform::new().with_position(Vec3::new(0., -50., 0.)),
+            Transform::new().with_position(Vec3::new(0., -50., 0.)),
         );
         io.add_component(
             floor_ent,
-            &Render::new(FLOOR_RDR).primitive(Primitive::Lines),
+            Render::new(FLOOR_RDR).primitive(Primitive::Lines),
         );
-        io.add_component(floor_ent, &Synchronized);
+        io.add_component(floor_ent, Synchronized);
 
         // Parse path mesh
         let path_mesh = obj_lines_to_mesh(PATH_OBJ);
@@ -338,13 +335,13 @@ impl ServerState {
                 } else {
                     // Add ship for newly connected client
                     ship_ent = io.create_entity();
-                    io.add_component(ship_ent, &Transform::identity());
-                    io.add_component(ship_ent, &Render::new(SHIP_RDR).primitive(Primitive::Lines));
-                    io.add_component(ship_ent, &Synchronized);
-                    io.add_component(ship_ent, &ShipComponent(client.id));
+                    io.add_component(ship_ent, Transform::identity());
+                    io.add_component(ship_ent, Render::new(SHIP_RDR).primitive(Primitive::Lines));
+                    io.add_component(ship_ent, Synchronized);
+                    io.add_component(ship_ent, ShipComponent(client.id));
                     io.add_component(
                         ship_ent,
-                        &KinematicPhysics {
+                        KinematicPhysics {
                             vel: Vec3::ZERO,
                             mass: 1.,
                             ang_vel: Vec3::ZERO,
@@ -527,13 +524,6 @@ fn grid_mesh(n: i32, scale: f32) -> Mesh {
     m
 }
 
-impl Message for InputAbstraction {
-    const CHANNEL: ChannelIdStatic = ChannelIdStatic {
-        id: pkg_namespace!("InputAbstraction"),
-        locality: Locality::Remote,
-    };
-}
-
 /// Defines the mesh data fro a cube
 fn cube() -> Mesh {
     let size = 0.25;
@@ -557,12 +547,6 @@ fn cube() -> Mesh {
 }
 
 /// Message telling a client which ID it has
-#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+#[derive(Message, Serialize, Deserialize, Debug, Clone, Copy)]
+#[locality("Remote")]
 struct ShipIdMessage(EntityId);
-
-impl Message for ShipIdMessage {
-    const CHANNEL: ChannelIdStatic = ChannelIdStatic {
-        id: pkg_namespace!("ShipIdMessage"),
-        locality: Locality::Remote,
-    };
-}
