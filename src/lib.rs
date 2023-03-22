@@ -86,14 +86,15 @@ impl UserState for ClientState {
     // Implement a constructor
     fn new(io: &mut EngineIo, sched: &mut EngineSchedule<Self>) -> Self {
         //let mesh = obj_lines_to_mesh(include_str!("assets/ship.obj"));
-        let environment_mesh = obj_lines_to_mesh(ENV_OBJ);
+        let mut environment_mesh = obj_lines_to_mesh(ENV_OBJ);
+        environment_mesh.recolor([0.2, 1., 0.2]);
         io.send(&UploadMesh {
             mesh: environment_mesh,
             id: MAP_RDR,
         });
 
         io.send(&UploadMesh {
-            mesh: grid_mesh(20, 20.),
+            mesh: grid_mesh(20, 20., [0., 0.2, 0.]),
             id: FLOOR_RDR,
         });
 
@@ -497,10 +498,8 @@ fn lerp(a: f32, b: f32, t: f32) -> f32 {
 // Calls new() for the appropriate state.
 make_app_state!(ClientState, ServerState);
 
-fn grid_mesh(n: i32, scale: f32) -> Mesh {
+fn grid_mesh(n: i32, scale: f32, color: [f32; 3]) -> Mesh {
     let mut m = Mesh::new();
-
-    let color = [0., 1., 0.];
 
     let width = n as f32 * scale;
 
