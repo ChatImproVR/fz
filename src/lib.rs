@@ -7,7 +7,9 @@ use cimvr_common::{
     desktop::{ElementState, InputEvent, KeyCode, KeyboardEvent},
     gamepad::{Axis, Button, GamepadState},
     glam::{EulerRot, Mat3, Quat, Vec3},
-    render::{CameraComponent, Mesh, MeshHandle, Primitive, Render, UploadMesh, Vertex},
+    render::{
+        CameraComponent, Mesh, MeshHandle, Primitive, Render, RenderExtra, UploadMesh, Vertex,
+    },
     utils::camera::Perspective,
     vr::VrUpdate,
     Transform,
@@ -566,7 +568,7 @@ fn cube() -> Mesh {
 struct ShipIdMessage(EntityId);
 
 struct CountdownAnimation {
-    entity: EntityId,
+    entities: Vec<EntityId>,
     start_time: f32,
     needs_restart: bool,
 }
@@ -576,6 +578,10 @@ impl CountdownAnimation {
     const RDR_ID_2: MeshHandle = MeshHandle::new(pkg_namespace!("Countdown2"));
     const RDR_ID_3: MeshHandle = MeshHandle::new(pkg_namespace!("Countdown3"));
     const RDR_ID_GO: MeshHandle = MeshHandle::new(pkg_namespace!("CountdownGo"));
+
+    fn colors() -> Vec<[f32; 3]> {
+        vec![[1., 0., 1.], [0., 1., 1.], [1., 1., 0.]]
+    }
 
     pub fn assets(io: &mut EngineIo) {
         io.send(&UploadMesh {
@@ -597,19 +603,22 @@ impl CountdownAnimation {
     }
 
     pub fn new(io: &mut EngineIo) -> Self {
-        let entity = io
-            .create_entity()
-            .add_component(Transform::default().with_rotation(Quat::from_euler(
-                EulerRot::XYZ,
-                0.,
-                -FRAC_PI_2,
-                0.,
-            )))
-            .add_component(Render::new(Self::RDR_ID_1))
-            .build();
+        let entities = (0..Self::colors().len())
+            .map(|_| {
+                io.create_entity()
+                    .add_component(Transform::default().with_rotation(Quat::from_euler(
+                        EulerRot::XYZ,
+                        0.,
+                        -FRAC_PI_2,
+                        0.,
+                    )))
+                    .add_component(Render::new(Self::RDR_ID_1))
+                    .build()
+            })
+            .collect();
 
         Self {
-            entity,
+            entities,
             start_time: 0.,
             needs_restart: false,
         }
@@ -641,6 +650,13 @@ impl CountdownAnimation {
 
         let rdr_component = rdr_component.limit(limit).primitive(Primitive::Lines);
 
-        io.add_component(self.entity, rdr_component);
+        for (&entity, color) in self.entities.iter().zip(Self::colors()) {
+            io.add_component(entity, rdr_component);
+            io.add_component(entity, color_extra(color));
+        }
     }
+}
+
+fn color_extra([r, g, b]: [f32; 3]) -> RenderExtra {
+    RenderExtra([r, g, b, 1., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.])
 }
