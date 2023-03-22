@@ -5,7 +5,7 @@ use std::{
 
 use cimvr_common::{
     desktop::{ElementState, InputEvent, KeyCode, KeyboardEvent},
-    gamepad::{Axis, GamepadState},
+    gamepad::{Axis, GamepadState, Button},
     glam::{EulerRot, Mat3, Quat, Vec3},
     render::{CameraComponent, Mesh, MeshHandle, Primitive, Render, UploadMesh, Vertex},
     utils::camera::Perspective,
@@ -198,6 +198,12 @@ impl ClientState {
                 input.pitch = gamepad.axes[&Axis::LeftStickY];
                 input.roll = gamepad.axes[&Axis::LeftStickX];
                 input.throttle = gamepad.axes[&Axis::RightStickY];
+                if gamepad.buttons[&Button::RightTrigger2] {
+                    input.throttle = 1.;
+                }
+                if gamepad.buttons[&Button::LeftTrigger2] {
+                    input.throttle = -1.;
+                }
             }
         }
 
@@ -391,8 +397,8 @@ impl ServerState {
         let Some(FrameTime { delta, .. }) = io.inbox_first() else { return };
         kinematics::simulate(query, delta);
 
-        //let gravity = Vec3::y() * -0.5;
-        //kinematics::gravity(query, dt, gravity);
+        //let gravity = Vec3::Y * -0.5;
+        //kinematics::gravity(query, delta, gravity);
     }
 }
 
