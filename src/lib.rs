@@ -5,7 +5,7 @@ use std::{
 
 use cimvr_common::{
     desktop::{ElementState, InputEvent, KeyCode, KeyboardEvent},
-    gamepad::{Axis, GamepadState, Button},
+    gamepad::{Axis, Button, GamepadState},
     glam::{EulerRot, Mat3, Quat, Vec3},
     render::{CameraComponent, Mesh, MeshHandle, Primitive, Render, UploadMesh, Vertex},
     utils::camera::Perspective,
@@ -32,6 +32,7 @@ struct ClientState {
     a_is_pressed: bool,
     s_is_pressed: bool,
     d_is_pressed: bool,
+    anim: CountdownAnimation,
 }
 
 pub const SHIP_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Ship"));
@@ -134,8 +135,18 @@ impl UserState for ClientState {
             .subscribe::<InputEvent>()
             .build();
 
+        sched
+            .add_system(Self::animation)
+            .subscribe::<FrameTime>()
+            .build();
+
+        let mut anim = CountdownAnimation::new(io);
+        CountdownAnimation::assets(io);
+        anim.restart();
+
         Self {
             proj: Perspective::new(),
+            anim,
             camera_ent,
             ship_ent: None,
             w_is_pressed: false,
@@ -147,6 +158,11 @@ impl UserState for ClientState {
 }
 
 impl ClientState {
+    fn animation(&mut self, io: &mut EngineIo, _query: &mut QueryResult) {
+        let Some(time) = io.inbox_first::<FrameTime>() else { return };
+        self.anim.update(io, time);
+    }
+
     fn camera(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
         // Perspective matrix stuff
         for event in io.inbox::<InputEvent>() {
@@ -177,7 +193,7 @@ impl ClientState {
         }
 
         // Set camera pos
-        if let Some(ship_ent) = self.ship_ent {
+        if let Some(ship_ent) = query.iter().next() {
             let ship_transf: Transform = query.read(ship_ent);
 
             let cam_pos = Transform::new()
@@ -548,3 +564,83 @@ fn cube() -> Mesh {
 #[derive(Message, Serialize, Deserialize, Debug, Clone, Copy)]
 #[locality("Remote")]
 struct ShipIdMessage(EntityId);
+
+struct CountdownAnimation {
+    entity: EntityId,
+    start_time: f32,
+    needs_restart: bool,
+}
+
+impl CountdownAnimation {
+    const RDR_ID_1: MeshHandle = MeshHandle::new(pkg_namespace!("Countdown1"));
+    const RDR_ID_2: MeshHandle = MeshHandle::new(pkg_namespace!("Countdown2"));
+    const RDR_ID_3: MeshHandle = MeshHandle::new(pkg_namespace!("Countdown3"));
+    const RDR_ID_GO: MeshHandle = MeshHandle::new(pkg_namespace!("CountdownGo"));
+
+    pub fn assets(io: &mut EngineIo) {
+        io.send(&UploadMesh {
+            mesh: obj_lines_to_mesh(include_str!("assets/1.obj")),
+            id: Self::RDR_ID_1,
+        });
+        io.send(&UploadMesh {
+            mesh: obj_lines_to_mesh(include_str!("assets/2.obj")),
+            id: Self::RDR_ID_2,
+        });
+        io.send(&UploadMesh {
+            mesh: obj_lines_to_mesh(include_str!("assets/3.obj")),
+            id: Self::RDR_ID_3,
+        });
+        io.send(&UploadMesh {
+            mesh: obj_lines_to_mesh(include_str!("assets/go.obj")),
+            id: Self::RDR_ID_GO,
+        });
+    }
+
+    pub fn new(io: &mut EngineIo) -> Self {
+        let entity = io
+            .create_entity()
+            .add_component(Transform::default().with_rotation(Quat::from_euler(
+                EulerRot::XYZ,
+                0.,
+                -FRAC_PI_2,
+                0.,
+            )))
+            .add_component(Render::new(Self::RDR_ID_1))
+            .build();
+
+        Self {
+            entity,
+            start_time: 0.,
+            needs_restart: false,
+        }
+    }
+
+    pub fn restart(&mut self) {
+        self.needs_restart = true;
+    }
+
+    pub fn update(&mut self, io: &mut EngineIo, time: FrameTime) {
+        if self.needs_restart {
+            self.start_time = time.time;
+            self.needs_restart = false;
+        }
+
+        let elapsed = time.time - self.start_time;
+
+        let rdr_component = match elapsed as i32 + 1 {
+            1 => Render::new(Self::RDR_ID_3),
+            2 => Render::new(Self::RDR_ID_2),
+            3 => Render::new(Self::RDR_ID_1),
+            _ => Render::new(Self::RDR_ID_GO),
+        };
+
+        let limit = match elapsed < 8. {
+            true => None,
+            false => Some(0),
+        };
+
+        let rdr_component = rdr_component.limit(limit).primitive(Primitive::Lines);
+
+        io.add_component(self.entity, rdr_component);
+    }
+}
