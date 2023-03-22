@@ -4,12 +4,13 @@ use std::{
 };
 
 use cimvr_common::{
-    desktop::{InputEvents, KeyboardEvent, InputEvent, ElementState, KeyCode},
+    desktop::{ElementState, InputEvent, KeyCode, KeyboardEvent},
     gamepad::{Axis, GamepadState},
+    glam::{EulerRot, Mat3, Quat, Vec3},
     render::{CameraComponent, Mesh, MeshHandle, Primitive, Render, UploadMesh, Vertex},
     utils::camera::Perspective,
     vr::VrUpdate,
-    Transform, glam::{Vec3, Mat3, Quat, EulerRot},
+    Transform,
 };
 use cimvr_engine_interface::{dbg, make_app_state, pkg_namespace, prelude::*, println, FrameTime};
 use kinematics::KinematicPhysics;
@@ -104,9 +105,11 @@ impl UserState for ClientState {
         });
 
         // Add camera
-        let camera_ent = io.create_entity();
-        io.add_component(camera_ent, Transform::identity());
-        io.add_component(camera_ent, CameraComponent::default());
+        let camera_ent = io
+            .create_entity()
+            .add_component(Transform::identity())
+            .add_component(CameraComponent::default())
+            .build();
 
         // Upload cube
         io.send(&UploadMesh {
@@ -114,23 +117,21 @@ impl UserState for ClientState {
             id: CUBE_HANDLE,
         });
 
-        sched.add_system(
-            Self::camera,
-            SystemDescriptor::new(Stage::PreUpdate)
-                .subscribe::<InputEvents>()
-                .subscribe::<VrUpdate>()
-                .subscribe::<FrameTime>()
-                .subscribe::<ShipIdMessage>()
-                .query::<Transform>(Access::Write)
-                .query::<ShipComponent>(Access::Write),
-        );
+        sched
+            .add_system(Self::camera)
+            .subscribe::<InputEvent>()
+            .subscribe::<VrUpdate>()
+            .subscribe::<FrameTime>()
+            .subscribe::<ShipIdMessage>()
+            .query::<Transform>(Access::Write)
+            .query::<ShipComponent>(Access::Write)
+            .build();
 
-        sched.add_system(
-            Self::controller_input,
-            SystemDescriptor::new(Stage::PreUpdate)
-                .subscribe::<GamepadState>()
-                .subscribe::<InputEvents>(),
-        );
+        sched
+            .add_system(Self::controller_input)
+            .subscribe::<GamepadState>()
+            .subscribe::<InputEvent>()
+            .build();
 
         Self {
             proj: Perspective::new(),
@@ -147,8 +148,8 @@ impl UserState for ClientState {
 impl ClientState {
     fn camera(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
         // Perspective matrix stuff
-        if let Some(input) = io.inbox_first::<InputEvents>() {
-            self.proj.handle_input_events(&input);
+        for event in io.inbox::<InputEvent>() {
+            self.proj.handle_event(&event);
         }
 
         if let Some(update) = io.inbox_first::<VrUpdate>() {
@@ -200,35 +201,33 @@ impl ClientState {
             }
         }
 
-        if let Some(InputEvents(events)) = io.inbox_first() {
-            for event in events {
-                if let InputEvent::Keyboard(KeyboardEvent::Key { key, state }) = event {
-                    let is_pressed = state == ElementState::Pressed;
-                    match key {
-                        KeyCode::W => self.w_is_pressed = is_pressed,
-                        KeyCode::A => self.a_is_pressed = is_pressed,
-                        KeyCode::S => self.s_is_pressed = is_pressed,
-                        KeyCode::D => self.d_is_pressed = is_pressed,
-                        _ => (),
-                    }
+        for event in io.inbox::<InputEvent>() {
+            if let InputEvent::Keyboard(KeyboardEvent::Key { key, state }) = event {
+                let is_pressed = state == ElementState::Pressed;
+                match key {
+                    KeyCode::W => self.w_is_pressed = is_pressed,
+                    KeyCode::A => self.a_is_pressed = is_pressed,
+                    KeyCode::S => self.s_is_pressed = is_pressed,
+                    KeyCode::D => self.d_is_pressed = is_pressed,
+                    _ => (),
                 }
             }
+        }
 
-            if self.w_is_pressed {
-                input.throttle = 1.0;
-            }
+        if self.w_is_pressed {
+            input.throttle = 1.0;
+        }
 
-            if self.s_is_pressed {
-                input.throttle = -1.0;
-            }
+        if self.s_is_pressed {
+            input.throttle = -1.0;
+        }
 
-            if self.a_is_pressed {
-                input.roll = -1.0;
-            }
+        if self.a_is_pressed {
+            input.roll = -1.0;
+        }
 
-            if self.d_is_pressed {
-                input.roll = 1.0;
-            }
+        if self.d_is_pressed {
+            input.roll = 1.0;
         }
 
         io.send(&input);
@@ -250,22 +249,18 @@ impl UserState for ServerState {
     // Implement a constructor
     fn new(io: &mut EngineIo, sched: &mut EngineSchedule<Self>) -> Self {
         // Add environment
-        let env_ent = io.create_entity();
-        io.add_component(env_ent, Transform::identity());
-        io.add_component(env_ent, Render::new(MAP_RDR).primitive(Primitive::Lines));
-        io.add_component(env_ent, Synchronized);
+        io.create_entity()
+            .add_component(Transform::identity())
+            .add_component(Render::new(MAP_RDR).primitive(Primitive::Lines))
+            .add_component(Synchronized)
+            .build();
 
         // Add floor
-        let floor_ent = io.create_entity();
-        io.add_component(
-            floor_ent,
-            Transform::new().with_position(Vec3::new(0., -50., 0.)),
-        );
-        io.add_component(
-            floor_ent,
-            Render::new(FLOOR_RDR).primitive(Primitive::Lines),
-        );
-        io.add_component(floor_ent, Synchronized);
+        io.create_entity()
+            .add_component(Transform::new().with_position(Vec3::new(0., -50., 0.)))
+            .add_component(Render::new(FLOOR_RDR).primitive(Primitive::Lines))
+            .add_component(Synchronized)
+            .build();
 
         // Parse path mesh
         let path_mesh = obj_lines_to_mesh(PATH_OBJ);
@@ -273,37 +268,36 @@ impl UserState for ServerState {
         let path = Path::new(transforms);
 
         // Add connection monitoring
-        sched.add_system(
-            Self::conn_update,
-            SystemDescriptor::new(Stage::PreUpdate)
+        sched
+            .add_system(Self::conn_update)
+            .stage(Stage::PreUpdate)
             .subscribe::<Connections>()
-            .query::<ShipComponent>(Access::Write),
-        );
+            .query::<ShipComponent>(Access::Write)
+            .build();
 
         // Add gamepad/keyboard input system
-        sched.add_system(
-            Self::input_update,
-            SystemDescriptor::new(Stage::PreUpdate).subscribe::<InputAbstraction>(),
-        );
+        sched
+            .add_system(Self::input_update)
+            .stage(Stage::PreUpdate)
+            .subscribe::<InputAbstraction>()
+            .build();
 
         // Add physics system
-        sched.add_system(
-            Self::motion_update,
-            SystemDescriptor::new(Stage::Update)
+        sched
+            .add_system(Self::motion_update)
             .query::<Transform>(Access::Write)
             .query::<KinematicPhysics>(Access::Write)
             .query::<ShipComponent>(Access::Read)
-            .subscribe::<FrameTime>(),
-        );
+            .subscribe::<FrameTime>()
+            .build();
 
         // Add physics system
-        sched.add_system(
-            Self::kinematics_update,
-            SystemDescriptor::new(Stage::Update)
+        sched
+            .add_system(Self::kinematics_update)
             .query::<Transform>(Access::Write)
             .query::<KinematicPhysics>(Access::Write)
-            .subscribe::<FrameTime>(),
-        );
+            .subscribe::<FrameTime>()
+            .build();
 
         // Define ship capabilities
         let ship = ShipCharacteristics {
@@ -334,20 +328,19 @@ impl ServerState {
                     ship_ent = ent;
                 } else {
                     // Add ship for newly connected client
-                    ship_ent = io.create_entity();
-                    io.add_component(ship_ent, Transform::identity());
-                    io.add_component(ship_ent, Render::new(SHIP_RDR).primitive(Primitive::Lines));
-                    io.add_component(ship_ent, Synchronized);
-                    io.add_component(ship_ent, ShipComponent(client.id));
-                    io.add_component(
-                        ship_ent,
-                        KinematicPhysics {
+                    ship_ent = io
+                        .create_entity()
+                        .add_component(Transform::identity())
+                        .add_component(Render::new(SHIP_RDR).primitive(Primitive::Lines))
+                        .add_component(Synchronized)
+                        .add_component(ShipComponent(client.id))
+                        .add_component(KinematicPhysics {
                             vel: Vec3::ZERO,
                             mass: 1.,
                             ang_vel: Vec3::ZERO,
                             moment: 1.,
-                        },
-                    );
+                        })
+                        .build();
                 }
 
                 // Tell the client which ship entity to track...
@@ -515,10 +508,10 @@ fn grid_mesh(n: i32, scale: f32) -> Mesh {
             [-width, 0.0, j],
         ];
 
-            for pos in positions {
-                let idx = m.push_vertex(Vertex::new(pos, color));
-                m.indices.push(idx);
-            }
+        for pos in positions {
+            let idx = m.push_vertex(Vertex::new(pos, color));
+            m.indices.push(idx);
+        }
     }
 
     m
