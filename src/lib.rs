@@ -580,7 +580,7 @@ impl CountdownAnimation {
     const RDR_ID_GO: MeshHandle = MeshHandle::new(pkg_namespace!("CountdownGo"));
 
     fn colors() -> Vec<[f32; 3]> {
-        vec![[1., 0., 1.], [0., 1., 1.], [1., 1., 0.]]
+        vec![[1., 0., 1.], [0., 1., 1.], [1., 1., 0.]].into_iter().cycle().take(3*4).collect()
     }
 
     pub fn assets(io: &mut EngineIo) {
@@ -606,12 +606,7 @@ impl CountdownAnimation {
         let entities = (0..Self::colors().len())
             .map(|_| {
                 io.create_entity()
-                    .add_component(Transform::default().with_rotation(Quat::from_euler(
-                        EulerRot::XYZ,
-                        0.,
-                        -FRAC_PI_2,
-                        0.,
-                    )))
+                    .add_component(Transform::default())
                     .add_component(Render::new(Self::RDR_ID_1))
                     .build()
             })
@@ -643,14 +638,24 @@ impl CountdownAnimation {
             _ => Render::new(Self::RDR_ID_GO),
         };
 
+        /*
         let limit = match elapsed < 8. {
             true => None,
             false => Some(0),
         };
+        */
 
-        let rdr_component = rdr_component.limit(limit).primitive(Primitive::Lines);
+        let rdr_component = rdr_component/*.limit(limit)*/.primitive(Primitive::Lines);
 
-        for (&entity, color) in self.entities.iter().zip(Self::colors()) {
+        for (idx, (&entity, color)) in self.entities.iter().zip(Self::colors()).enumerate() {
+            let orient = Quat::from_euler(EulerRot::XYZ, 0., -FRAC_PI_2, 0.);
+
+            io.add_component(
+                entity,
+                Transform::identity()
+                    .with_rotation(orient)
+                    .with_position(Vec3::new(idx as f32 / 3., (time.time * 3. + idx as f32 / 3.).cos(), (time.time * 3. + idx as f32 / 3.).sin())),
+            );
             io.add_component(entity, rdr_component);
             io.add_component(entity, color_extra(color));
         }
