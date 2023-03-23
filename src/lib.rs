@@ -10,7 +10,7 @@ use cimvr_common::{
     render::{
         CameraComponent, Mesh, MeshHandle, Primitive, Render, RenderExtra, UploadMesh, Vertex,
     },
-    utils::camera::Perspective,
+    utils::{camera::Perspective, input_helper::InputHelper},
     vr::VrUpdate,
     Transform,
 };
@@ -30,11 +30,8 @@ struct ClientState {
     proj: Perspective,
     camera_ent: EntityId,
     ship_ent: Option<EntityId>,
-    w_is_pressed: bool,
-    a_is_pressed: bool,
-    s_is_pressed: bool,
-    d_is_pressed: bool,
     anim: CountdownAnimation,
+    input_helper: InputHelper,
 }
 
 pub const SHIP_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Ship"));
@@ -146,15 +143,14 @@ impl UserState for ClientState {
         CountdownAnimation::assets(io);
         anim.restart();
 
+        let input_helper = InputHelper::new();
+
         Self {
             proj: Perspective::new(),
+            input_helper,
             anim,
             camera_ent,
             ship_ent: None,
-            w_is_pressed: false,
-            a_is_pressed: false,
-            s_is_pressed: false,
-            d_is_pressed: false,
         }
     }
 }
@@ -226,32 +222,21 @@ impl ClientState {
             }
         }
 
-        for event in io.inbox::<InputEvent>() {
-            if let InputEvent::Keyboard(KeyboardEvent::Key { key, state }) = event {
-                let is_pressed = state == ElementState::Pressed;
-                match key {
-                    KeyCode::W => self.w_is_pressed = is_pressed,
-                    KeyCode::A => self.a_is_pressed = is_pressed,
-                    KeyCode::S => self.s_is_pressed = is_pressed,
-                    KeyCode::D => self.d_is_pressed = is_pressed,
-                    _ => (),
-                }
-            }
-        }
+        self.input_helper.handle_input_events(io);
 
-        if self.w_is_pressed {
+        if self.input_helper.key_held(KeyCode::W) {
             input.throttle = 1.0;
         }
 
-        if self.s_is_pressed {
+        if self.input_helper.key_held(KeyCode::S) {
             input.throttle = -1.0;
         }
 
-        if self.a_is_pressed {
+        if self.input_helper.key_held(KeyCode::A) {
             input.roll = -1.0;
         }
 
-        if self.d_is_pressed {
+        if self.input_helper.key_held(KeyCode::D) {
             input.roll = 1.0;
         }
 
