@@ -20,10 +20,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::obj::obj_lines_to_mesh;
 
+//mod client_tag;
 mod curve;
 mod kinematics;
 mod obj;
 use curve::Path;
+
+#[derive(Message, Copy, Clone, Default, Serialize, Deserialize)]
+#[locality("Remote")]
+struct ShipUpload(Transform);
 
 // All state associated with client-side behaviour
 struct ClientState {
@@ -142,7 +147,7 @@ impl UserState for ClientState {
             .create_entity()
             .add_component(Transform::identity())
             .add_component(Render::new(SHIP_RDR).primitive(Primitive::Lines))
-            .add_component(ShipComponent)
+            .add_component(ClientShipComponent)
             .add_component(KinematicPhysics {
                 vel: Vec3::ZERO,
                 mass: 1.,
@@ -164,7 +169,7 @@ impl UserState for ClientState {
             .add_system(Self::motion_update)
             .query::<Transform>(Access::Write)
             .query::<KinematicPhysics>(Access::Write)
-            .query::<ShipComponent>(Access::Read)
+            .query::<ClientShipComponent>(Access::Read)
             .subscribe::<FrameTime>()
             .build();
 
@@ -175,7 +180,7 @@ impl UserState for ClientState {
             .subscribe::<FrameTime>()
             .subscribe::<ShipIdMessage>()
             .query::<Transform>(Access::Write)
-            .query::<ShipComponent>(Access::Write)
+            .query::<ClientShipComponent>(Access::Write)
             .build();
 
         // Define ship capabilities
@@ -293,32 +298,41 @@ impl ClientState {
             //let ShipComponent(client_id) = query.read(ship_ent);
 
             // Step ship forward in time
-            ship_controller(delta, self.motion_cfg, self.input, &self.path, &mut tf, &mut kt);
+            ship_controller(
+                delta,
+                self.motion_cfg,
+                self.input,
+                &self.path,
+                &mut tf,
+                &mut kt,
+            );
 
             query.write(ship_ent, &kt);
             query.write(ship_ent, &tf);
+
+            io.send(&ShipUpload(tf));
         }
     }
-
 
     /// Simulate kinematics
     fn kinematics_update(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
         let Some(FrameTime { delta, .. }) = io.inbox_first() else { return };
         kinematics::simulate(query, delta);
-
-        //let gravity = Vec3::Y * -0.5;
-        //kinematics::gravity(query, delta, gravity);
     }
 }
 
 // All state associated with server-side behaviour
 struct ServerState {
-    clients: HashMap<ClientId, InputAbstraction>,
+    last_clients: HashSet<ClientId>,
 }
+
+/// Denotes the single ship client-side
+#[derive(Component, serde::Serialize, serde::Deserialize, Default, Copy, Clone, PartialEq, Eq)]
+struct ClientShipComponent;
 
 /// Denotes a ship corresponding to a client
 #[derive(Component, serde::Serialize, serde::Deserialize, Default, Copy, Clone, PartialEq, Eq)]
-struct ShipComponent;
+struct ServerShipComponent(ClientId);
 
 impl UserState for ServerState {
     // Implement a constructor
@@ -342,58 +356,90 @@ impl UserState for ServerState {
             .add_system(Self::conn_update)
             .stage(Stage::PreUpdate)
             .subscribe::<Connections>()
-            .query::<ShipComponent>(Access::Write)
+            .query::<ServerShipComponent>(Access::Write)
             .build();
 
-        // Add gamepad/keyboard input system
         sched
-            .add_system(Self::input_update)
-            .stage(Stage::PreUpdate)
-            .subscribe::<InputAbstraction>()
+            .add_system(Self::ship_update)
+            .subscribe::<ShipUpload>()
+            .query::<ServerShipComponent>(Access::Read)
+            .query::<Transform>(Access::Write)
+            .build();
+
+        // Add physics system
+        sched
+            .add_system(Self::kinematics_update)
+            .query::<Transform>(Access::Write)
+            .query::<KinematicPhysics>(Access::Write)
+            .subscribe::<FrameTime>()
             .build();
 
         Self {
-            clients: Default::default(),
+            last_clients: Default::default(),
         }
     }
 }
 
 impl ServerState {
-    fn conn_update(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
-        /*
-        if let Some(Connections { clients }) = io.inbox_first() {
-            for client in &clients {
-                let found_ship = query
-                    .iter()
-                    .find(|&ent| query.read::<ShipComponent>(ent) == ShipComponent);
+    fn ship_update(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
+        // Interpret the last shipupload message we received from each client,
+        // and use it to set the position of each ship entity
+        let ship_updates: HashMap<ClientId, ShipUpload> =
+            io.inbox_clients::<ShipUpload>().collect();
 
-                let ship_ent;
-                if let Some(ent) = found_ship {
-                    ship_ent = ent;
-                } else {
-                    // Add ship for newly connected client
-                }
-
-                // Tell the client which ship entity to track...
-                io.send_to_client(&ShipIdMessage(ship_ent), client.id);
-            }
-
-            // Remove ships of disconnected clients
-            for ship_ent in query.iter() {
-                let ShipComponent(client_id) = query.read(ship_ent);
-                let found_client = clients.iter().find(|c| c.id == client_id);
-                if found_client.is_none() {
-                    io.remove_entity(ship_ent);
-                }
+        for entity in query.iter() {
+            let ServerShipComponent(client_id) = query.read(entity);
+            if let Some(ShipUpload(transform)) = ship_updates.get(&client_id) {
+                query.write(entity, transform);
             }
         }
-        */
     }
 
-    fn input_update(&mut self, io: &mut EngineIo, _query: &mut QueryResult) {
-        for (client_id, input) in io.inbox_clients::<InputAbstraction>() {
-            self.clients.insert(client_id, input);
+    fn conn_update(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
+        if let Some(Connections { clients }) = io.inbox_first() {
+            let current_connections: HashSet<ClientId> =
+                clients.into_iter().map(|c| c.id).collect();
+
+            // Remove entities corresponding to disconnected clients
+            for entity in query.iter() {
+                let ServerShipComponent(client_id) = query.read(entity);
+                if !current_connections.contains(&client_id) {
+                    io.remove_entity(entity);
+                }
+            }
+
+            // Filter for new connections
+            let mut new_connections = current_connections;
+            for entity in query.iter() {
+                let ServerShipComponent(client_id) = query.read(entity);
+                if !new_connections.remove(&client_id) {
+                    println!("{:?} disconnected", client_id);
+                }
+            }
+
+            // Add a new ship entity for each new connection
+            for client_id in new_connections {
+                println!("{:?} connected", client_id);
+                io.create_entity()
+                    .add_component(Transform::identity())
+                    .add_component(Render::new(SHIP_RDR).primitive(Primitive::Lines))
+                    .add_component(ServerShipComponent(client_id))
+                    .add_component(Synchronized)
+                    .add_component(KinematicPhysics {
+                        vel: Vec3::ZERO,
+                        mass: 1.,
+                        ang_vel: Vec3::ZERO,
+                        moment: 1.,
+                    })
+                    .build();
+            }
         }
+    }
+
+    /// Simulate kinematics
+    fn kinematics_update(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
+        let Some(FrameTime { delta, .. }) = io.inbox_first() else { return };
+        kinematics::simulate(query, delta);
     }
 
 }
