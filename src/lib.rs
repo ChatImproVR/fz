@@ -88,8 +88,8 @@ fn orientations(mesh: &Mesh) -> Vec<Transform> {
     transforms
 }
 
-const ENV_OBJ: &str = include_str!("assets/loop1_env.obj");
-const PATH_OBJ: &str = include_str!("assets/loop1_path.obj");
+const ENV_OBJ: &str = include_str!("assets/loop3_env.obj");
+const PATH_OBJ: &str = include_str!("assets/loop3_path.obj");
 
 impl UserState for ClientState {
     // Implement a constructor
