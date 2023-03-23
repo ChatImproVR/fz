@@ -29,9 +29,12 @@ use curve::Path;
 struct ClientState {
     proj: Perspective,
     camera_ent: EntityId,
-    ship_ent: Option<EntityId>,
+    ship_ent: EntityId,
     anim: CountdownAnimation,
     input_helper: InputHelper,
+    input: InputAbstraction,
+    motion_cfg: ShipCharacteristics,
+    path: Path,
 }
 
 pub const SHIP_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Ship"));
@@ -119,16 +122,6 @@ impl UserState for ClientState {
         });
 
         sched
-            .add_system(Self::camera)
-            .subscribe::<InputEvent>()
-            .subscribe::<VrUpdate>()
-            .subscribe::<FrameTime>()
-            .subscribe::<ShipIdMessage>()
-            .query::<Transform>(Access::Write)
-            .query::<ShipComponent>(Access::Write)
-            .build();
-
-        sched
             .add_system(Self::controller_input)
             .subscribe::<GamepadState>()
             .subscribe::<InputEvent>()
@@ -145,12 +138,68 @@ impl UserState for ClientState {
 
         let input_helper = InputHelper::new();
 
+        let ship_ent = io
+            .create_entity()
+            .add_component(Transform::identity())
+            .add_component(Render::new(SHIP_RDR).primitive(Primitive::Lines))
+            .add_component(ShipComponent)
+            .add_component(KinematicPhysics {
+                vel: Vec3::ZERO,
+                mass: 1.,
+                ang_vel: Vec3::ZERO,
+                moment: 1.,
+            })
+            .build();
+
+        // Add physics system
+        sched
+            .add_system(Self::kinematics_update)
+            .query::<Transform>(Access::Write)
+            .query::<KinematicPhysics>(Access::Write)
+            .subscribe::<FrameTime>()
+            .build();
+
+        // Add physics system
+        sched
+            .add_system(Self::motion_update)
+            .query::<Transform>(Access::Write)
+            .query::<KinematicPhysics>(Access::Write)
+            .query::<ShipComponent>(Access::Read)
+            .subscribe::<FrameTime>()
+            .build();
+
+        sched
+            .add_system(Self::camera)
+            .subscribe::<InputEvent>()
+            .subscribe::<VrUpdate>()
+            .subscribe::<FrameTime>()
+            .subscribe::<ShipIdMessage>()
+            .query::<Transform>(Access::Write)
+            .query::<ShipComponent>(Access::Write)
+            .build();
+
+        // Define ship capabilities
+        let motion_cfg = ShipCharacteristics {
+            mass: 1000.,
+            moment: 1000. * 3_f32.powi(2),
+            max_twirl: 5.,
+            max_impulse: 30.,
+        };
+
+        // Parse path mesh
+        let path_mesh = obj_lines_to_mesh(PATH_OBJ);
+        let transforms = orientations(&path_mesh);
+        let path = Path::new(transforms);
+
         Self {
+            motion_cfg,
+            input: InputAbstraction::default(),
+            path,
             proj: Perspective::new(),
             input_helper,
             anim,
             camera_ent,
-            ship_ent: None,
+            ship_ent,
         }
     }
 }
@@ -183,13 +232,6 @@ impl ClientState {
             },
         );
 
-        // Ship ID
-        if self.ship_ent.is_none() {
-            if let Some(ShipIdMessage(ent)) = io.inbox_first() {
-                self.ship_ent = Some(ent);
-            }
-        }
-
         // Set camera pos
         if let Some(ship_ent) = query.iter().next() {
             let ship_transf: Transform = query.read(ship_ent);
@@ -205,19 +247,19 @@ impl ClientState {
     }
 
     fn controller_input(&mut self, io: &mut EngineIo, _query: &mut QueryResult) {
-        let mut input = InputAbstraction::default();
+        self.input = InputAbstraction::default();
 
         if let Some(GamepadState(gamepads)) = io.inbox_first() {
             if let Some(gamepad) = gamepads.into_iter().next() {
-                input.yaw = gamepad.axes[&Axis::RightStickX];
-                input.pitch = gamepad.axes[&Axis::LeftStickY];
-                input.roll = gamepad.axes[&Axis::LeftStickX];
-                input.throttle = gamepad.axes[&Axis::RightStickY];
+                self.input.yaw = gamepad.axes[&Axis::RightStickX];
+                self.input.pitch = gamepad.axes[&Axis::LeftStickY];
+                self.input.roll = gamepad.axes[&Axis::LeftStickX];
+                self.input.throttle = gamepad.axes[&Axis::RightStickY];
                 if gamepad.buttons[&Button::RightTrigger2] {
-                    input.throttle = 1.;
+                    self.input.throttle = 1.;
                 }
                 if gamepad.buttons[&Button::LeftTrigger2] {
-                    input.throttle = -1.;
+                    self.input.throttle = -1.;
                 }
             }
         }
@@ -225,35 +267,58 @@ impl ClientState {
         self.input_helper.handle_input_events(io);
 
         if self.input_helper.key_held(KeyCode::W) {
-            input.throttle = 1.0;
+            self.input.throttle = 1.0;
         }
 
         if self.input_helper.key_held(KeyCode::S) {
-            input.throttle = -1.0;
+            self.input.throttle = -1.0;
         }
 
         if self.input_helper.key_held(KeyCode::A) {
-            input.roll = -1.0;
+            self.input.roll = -1.0;
         }
 
         if self.input_helper.key_held(KeyCode::D) {
-            input.roll = 1.0;
+            self.input.roll = 1.0;
         }
+    }
 
-        io.send(&input);
+    fn motion_update(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
+        let Some(FrameTime { delta, .. }) = io.inbox_first() else { return };
+
+        if let Some(ship_ent) = query.iter().next() {
+            // Get current physical properties
+            let mut kt: KinematicPhysics = query.read(ship_ent);
+            let mut tf: Transform = query.read(ship_ent);
+            //let ShipComponent(client_id) = query.read(ship_ent);
+
+            // Step ship forward in time
+            ship_controller(delta, self.motion_cfg, self.input, &self.path, &mut tf, &mut kt);
+
+            query.write(ship_ent, &kt);
+            query.write(ship_ent, &tf);
+        }
+    }
+
+
+    /// Simulate kinematics
+    fn kinematics_update(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
+        let Some(FrameTime { delta, .. }) = io.inbox_first() else { return };
+        kinematics::simulate(query, delta);
+
+        //let gravity = Vec3::Y * -0.5;
+        //kinematics::gravity(query, delta, gravity);
     }
 }
 
 // All state associated with server-side behaviour
 struct ServerState {
-    path: Path,
-    motion_cfg: ShipCharacteristics,
     clients: HashMap<ClientId, InputAbstraction>,
 }
 
 /// Denotes a ship corresponding to a client
 #[derive(Component, serde::Serialize, serde::Deserialize, Default, Copy, Clone, PartialEq, Eq)]
-struct ShipComponent(ClientId);
+struct ShipComponent;
 
 impl UserState for ServerState {
     // Implement a constructor
@@ -272,11 +337,6 @@ impl UserState for ServerState {
             .add_component(Synchronized)
             .build();
 
-        // Parse path mesh
-        let path_mesh = obj_lines_to_mesh(PATH_OBJ);
-        let transforms = orientations(&path_mesh);
-        let path = Path::new(transforms);
-
         // Add connection monitoring
         sched
             .add_system(Self::conn_update)
@@ -292,34 +352,7 @@ impl UserState for ServerState {
             .subscribe::<InputAbstraction>()
             .build();
 
-        // Add physics system
-        sched
-            .add_system(Self::motion_update)
-            .query::<Transform>(Access::Write)
-            .query::<KinematicPhysics>(Access::Write)
-            .query::<ShipComponent>(Access::Read)
-            .subscribe::<FrameTime>()
-            .build();
-
-        // Add physics system
-        sched
-            .add_system(Self::kinematics_update)
-            .query::<Transform>(Access::Write)
-            .query::<KinematicPhysics>(Access::Write)
-            .subscribe::<FrameTime>()
-            .build();
-
-        // Define ship capabilities
-        let ship = ShipCharacteristics {
-            mass: 1000.,
-            moment: 1000. * 3_f32.powi(2),
-            max_twirl: 5.,
-            max_impulse: 30.,
-        };
-
         Self {
-            motion_cfg: ship,
-            path,
             clients: Default::default(),
         }
     }
@@ -327,30 +360,18 @@ impl UserState for ServerState {
 
 impl ServerState {
     fn conn_update(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
+        /*
         if let Some(Connections { clients }) = io.inbox_first() {
             for client in &clients {
                 let found_ship = query
                     .iter()
-                    .find(|&ent| query.read::<ShipComponent>(ent) == ShipComponent(client.id));
+                    .find(|&ent| query.read::<ShipComponent>(ent) == ShipComponent);
 
                 let ship_ent;
                 if let Some(ent) = found_ship {
                     ship_ent = ent;
                 } else {
                     // Add ship for newly connected client
-                    ship_ent = io
-                        .create_entity()
-                        .add_component(Transform::identity())
-                        .add_component(Render::new(SHIP_RDR).primitive(Primitive::Lines))
-                        .add_component(Synchronized)
-                        .add_component(ShipComponent(client.id))
-                        .add_component(KinematicPhysics {
-                            vel: Vec3::ZERO,
-                            mass: 1.,
-                            ang_vel: Vec3::ZERO,
-                            moment: 1.,
-                        })
-                        .build();
                 }
 
                 // Tell the client which ship entity to track...
@@ -366,6 +387,7 @@ impl ServerState {
                 }
             }
         }
+        */
     }
 
     fn input_update(&mut self, io: &mut EngineIo, _query: &mut QueryResult) {
@@ -374,36 +396,6 @@ impl ServerState {
         }
     }
 
-    fn motion_update(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
-        let Some(FrameTime { delta, .. }) = io.inbox_first() else { return };
-
-        for ship_ent in query.iter() {
-            // Get current physical properties
-            let mut kt: KinematicPhysics = query.read(ship_ent);
-            let mut tf: Transform = query.read(ship_ent);
-            let ShipComponent(client_id) = query.read(ship_ent);
-
-            let input = *self
-                .clients
-                .entry(client_id)
-                .or_insert(InputAbstraction::default());
-
-            // Step ship forward in time
-            ship_controller(delta, self.motion_cfg, input, &self.path, &mut tf, &mut kt);
-
-            query.write(ship_ent, &kt);
-            query.write(ship_ent, &tf);
-        }
-    }
-
-    /// Simulate kinematics
-    fn kinematics_update(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
-        let Some(FrameTime { delta, .. }) = io.inbox_first() else { return };
-        kinematics::simulate(query, delta);
-
-        //let gravity = Vec3::Y * -0.5;
-        //kinematics::gravity(query, delta, gravity);
-    }
 }
 
 #[derive(Clone, Default, Copy)]
@@ -565,7 +557,11 @@ impl CountdownAnimation {
     const RDR_ID_GO: MeshHandle = MeshHandle::new(pkg_namespace!("CountdownGo"));
 
     fn colors() -> Vec<[f32; 3]> {
-        vec![[1., 0., 1.], [0., 1., 1.], [1., 1., 0.]].into_iter().cycle().take(3*4).collect()
+        vec![[1., 0., 1.], [0., 1., 1.], [1., 1., 0.]]
+            .into_iter()
+            .cycle()
+            .take(3 * 4)
+            .collect()
     }
 
     pub fn assets(io: &mut EngineIo) {
@@ -625,12 +621,13 @@ impl CountdownAnimation {
 
         /*
         let limit = match elapsed < 8. {
-            true => None,
-            false => Some(0),
+        true => None,
+        false => Some(0),
         };
         */
 
-        let rdr_component = rdr_component/*.limit(limit)*/.primitive(Primitive::Lines);
+        let rdr_component = rdr_component /*.limit(limit)*/
+            .primitive(Primitive::Lines);
 
         for (idx, (&entity, color)) in self.entities.iter().zip(Self::colors()).enumerate() {
             let orient = Quat::from_euler(EulerRot::XYZ, 0., -FRAC_PI_2, 0.);
@@ -639,7 +636,11 @@ impl CountdownAnimation {
                 entity,
                 Transform::identity()
                     .with_rotation(orient)
-                    .with_position(Vec3::new(idx as f32 / 3., (time.time * 3. + idx as f32 / 3.).cos(), (time.time * 3. + idx as f32 / 3.).sin())),
+                    .with_position(Vec3::new(
+                        idx as f32 / 3.,
+                        (time.time * 3. + idx as f32 / 3.).cos(),
+                        (time.time * 3. + idx as f32 / 3.).sin(),
+                    )),
             );
             io.add_component(entity, rdr_component);
             io.add_component(entity, color_extra(color));
