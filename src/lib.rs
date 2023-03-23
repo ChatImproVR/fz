@@ -32,6 +32,7 @@ struct ShipUpload(Transform, KinematicPhysics);
 
 // All state associated with client-side behaviour
 struct ClientState {
+    client_id: Option<ClientId>,
     proj: Perspective,
     camera_ent: EntityId,
     ship_ent: EntityId,
@@ -133,6 +134,13 @@ impl UserState for ClientState {
             .build();
 
         sched
+            .add_system(Self::deleter)
+            .subscribe::<ClientIdMessage>()
+            .query::<ServerShipComponent>(Access::Read)
+            .build();
+
+
+        sched
             .add_system(Self::animation)
             .subscribe::<FrameTime>()
             .build();
@@ -178,7 +186,6 @@ impl UserState for ClientState {
             .subscribe::<InputEvent>()
             .subscribe::<VrUpdate>()
             .subscribe::<FrameTime>()
-            .subscribe::<ShipIdMessage>()
             .query::<Transform>(Access::Write)
             .query::<ClientShipComponent>(Access::Write)
             .build();
@@ -197,6 +204,7 @@ impl UserState for ClientState {
         let path = Path::new(transforms);
 
         Self {
+            client_id: None,
             motion_cfg,
             input: InputAbstraction::default(),
             path,
@@ -210,6 +218,21 @@ impl UserState for ClientState {
 }
 
 impl ClientState {
+    fn deleter(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
+        if let Some(my_id) = self.client_id {
+            for entity in query.iter() {
+                let ServerShipComponent(id) = query.read(entity);
+                if id == my_id {
+                    io.remove_entity(entity);
+                }
+            }
+        }
+
+        if let Some(ClientIdMessage(id)) = io.inbox_first() {
+            self.client_id = Some(id);
+        }
+    }
+
     fn animation(&mut self, io: &mut EngineIo, _query: &mut QueryResult) {
         let Some(time) = io.inbox_first::<FrameTime>() else { return };
         self.anim.update(io, time);
@@ -417,6 +440,8 @@ impl ServerState {
                 if !new_connections.remove(&client_id) {
                     println!("{:?} disconnected", client_id);
                 }
+
+                io.send_to_client(&ClientIdMessage(client_id), client_id);
             }
 
             // Add a new ship entity for each new connection
@@ -585,7 +610,7 @@ fn cube() -> Mesh {
 /// Message telling a client which ID it has
 #[derive(Message, Serialize, Deserialize, Debug, Clone, Copy)]
 #[locality("Remote")]
-struct ShipIdMessage(EntityId);
+struct ClientIdMessage(ClientId);
 
 struct CountdownAnimation {
     entities: Vec<EntityId>,
