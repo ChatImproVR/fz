@@ -28,7 +28,7 @@ use curve::Path;
 
 #[derive(Message, Copy, Clone, Default, Serialize, Deserialize)]
 #[locality("Remote")]
-struct ShipUpload(Transform);
+struct ShipUpload(Transform, KinematicPhysics);
 
 // All state associated with client-side behaviour
 struct ClientState {
@@ -310,7 +310,7 @@ impl ClientState {
             query.write(ship_ent, &kt);
             query.write(ship_ent, &tf);
 
-            io.send(&ShipUpload(tf));
+            io.send(&ShipUpload(tf, kt));
         }
     }
 
@@ -359,19 +359,20 @@ impl UserState for ServerState {
             .query::<ServerShipComponent>(Access::Write)
             .build();
 
-        sched
-            .add_system(Self::ship_update)
-            .subscribe::<ShipUpload>()
-            .query::<ServerShipComponent>(Access::Read)
-            .query::<Transform>(Access::Write)
-            .build();
-
         // Add physics system
         sched
             .add_system(Self::kinematics_update)
             .query::<Transform>(Access::Write)
             .query::<KinematicPhysics>(Access::Write)
             .subscribe::<FrameTime>()
+            .build();
+
+        sched
+            .add_system(Self::ship_update)
+            .subscribe::<ShipUpload>()
+            .query::<ServerShipComponent>(Access::Read)
+            .query::<Transform>(Access::Write)
+            .query::<KinematicPhysics>(Access::Write)
             .build();
 
         Self {
@@ -389,8 +390,9 @@ impl ServerState {
 
         for entity in query.iter() {
             let ServerShipComponent(client_id) = query.read(entity);
-            if let Some(ShipUpload(transform)) = ship_updates.get(&client_id) {
+            if let Some(ShipUpload(transform, kt)) = ship_updates.get(&client_id) {
                 query.write(entity, transform);
+                query.write(entity, kt);
             }
         }
     }
@@ -425,12 +427,7 @@ impl ServerState {
                     .add_component(Render::new(SHIP_RDR).primitive(Primitive::Lines))
                     .add_component(ServerShipComponent(client_id))
                     .add_component(Synchronized)
-                    .add_component(KinematicPhysics {
-                        vel: Vec3::ZERO,
-                        mass: 1.,
-                        ang_vel: Vec3::ZERO,
-                        moment: 1.,
-                    })
+                    .add_component(KinematicPhysics::default())
                     .build();
             }
         }
