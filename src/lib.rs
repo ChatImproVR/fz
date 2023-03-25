@@ -88,8 +88,8 @@ fn orientations(mesh: &Mesh) -> Vec<Transform> {
     transforms
 }
 
-const ENV_OBJ: &str = include_str!("assets/loop3_env.obj");
-const PATH_OBJ: &str = include_str!("assets/loop3_path.obj");
+const ENV_OBJ: &str = include_str!("assets/loop1_env.obj");
+const PATH_OBJ: &str = include_str!("assets/loop1_path.obj");
 
 impl UserState for ClientState {
     // Implement a constructor
@@ -189,6 +189,9 @@ impl UserState for ClientState {
             .query::<Transform>(Access::Write)
             .query::<ClientShipComponent>(Access::Write)
             .build();
+
+        // For editing ui: sends schema implicitly
+        io.create_entity().add_component(ServerShipComponent::default()).build();
 
         // Define ship capabilities
         let motion_cfg = ShipCharacteristics {
@@ -627,8 +630,8 @@ impl CountdownAnimation {
     fn colors() -> Vec<[f32; 3]> {
         vec![[1., 0., 1.], [0., 1., 1.], [1., 1., 0.]]
             .into_iter()
-            .cycle()
-            .take(3 * 4)
+            //.cycle()
+            //.take(3 * 4)
             .collect()
     }
 
@@ -698,12 +701,9 @@ impl CountdownAnimation {
             .primitive(Primitive::Lines);
 
         for (idx, (&entity, color)) in self.entities.iter().zip(Self::colors()).enumerate() {
-            let orient = Quat::from_euler(EulerRot::XYZ, 0., -FRAC_PI_2, 0.);
-
             io.add_component(
                 entity,
                 Transform::identity()
-                    .with_rotation(orient)
                     .with_position(Vec3::new(
                         idx as f32 / 3.,
                         (time.time * 3. + idx as f32 / 3.).cos(),
