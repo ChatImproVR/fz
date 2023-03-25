@@ -94,6 +94,11 @@ const PATH_OBJ: &str = include_str!("assets/loop1_path.obj");
 impl UserState for ClientState {
     // Implement a constructor
     fn new(io: &mut EngineIo, sched: &mut EngineSchedule<Self>) -> Self {
+        // Parse path mesh
+        let path_mesh = obj_lines_to_mesh(PATH_OBJ);
+        let transforms = orientations(&path_mesh);
+        let path = Path::new(transforms);
+
         //let mesh = obj_lines_to_mesh(include_str!("assets/ship.obj"));
         let mut environment_mesh = obj_lines_to_mesh(ENV_OBJ);
         environment_mesh.recolor([0.2, 1., 0.2]);
@@ -139,13 +144,13 @@ impl UserState for ClientState {
             .query::<ServerShipComponent>(Access::Read)
             .build();
 
-
         sched
             .add_system(Self::animation)
             .subscribe::<FrameTime>()
             .build();
 
-        let mut anim = CountdownAnimation::new(io);
+        let animation_pos = path.lerp(6.);
+        let mut anim = CountdownAnimation::new(io, animation_pos);
         CountdownAnimation::assets(io);
         anim.restart();
 
@@ -191,7 +196,9 @@ impl UserState for ClientState {
             .build();
 
         // For editing ui: sends schema implicitly
-        io.create_entity().add_component(ServerShipComponent::default()).build();
+        io.create_entity()
+            .add_component(ServerShipComponent::default())
+            .build();
 
         // Define ship capabilities
         let motion_cfg = ShipCharacteristics {
@@ -200,11 +207,6 @@ impl UserState for ClientState {
             max_twirl: 5.,
             max_impulse: 30.,
         };
-
-        // Parse path mesh
-        let path_mesh = obj_lines_to_mesh(PATH_OBJ);
-        let transforms = orientations(&path_mesh);
-        let path = Path::new(transforms);
 
         Self {
             client_id: None,
@@ -466,7 +468,6 @@ impl ServerState {
         let Some(FrameTime { delta, .. }) = io.inbox_first() else { return };
         kinematics::simulate(query, delta);
     }
-
 }
 
 #[derive(Clone, Default, Copy)]
@@ -619,6 +620,7 @@ struct CountdownAnimation {
     entities: Vec<EntityId>,
     start_time: f32,
     needs_restart: bool,
+    position: Transform,
 }
 
 impl CountdownAnimation {
@@ -654,7 +656,7 @@ impl CountdownAnimation {
         });
     }
 
-    pub fn new(io: &mut EngineIo) -> Self {
+    pub fn new(io: &mut EngineIo, position: Transform) -> Self {
         let entities = (0..Self::colors().len())
             .map(|_| {
                 io.create_entity()
@@ -665,6 +667,7 @@ impl CountdownAnimation {
             .collect();
 
         Self {
+            position,
             entities,
             start_time: 0.,
             needs_restart: false,
@@ -701,15 +704,13 @@ impl CountdownAnimation {
             .primitive(Primitive::Lines);
 
         for (idx, (&entity, color)) in self.entities.iter().zip(Self::colors()).enumerate() {
-            io.add_component(
-                entity,
-                Transform::identity()
-                    .with_position(Vec3::new(
-                        idx as f32 / 3.,
-                        (time.time * 3. + idx as f32 / 3.).cos(),
-                        (time.time * 3. + idx as f32 / 3.).sin(),
-                    )),
-            );
+            let animation = Transform::identity().with_position(Vec3::new(
+                idx as f32 / 3.,
+                (time.time * 3. + idx as f32 / 3.).cos(),
+                (time.time * 3. + idx as f32 / 3.).sin(),
+            ));
+            let transf = self.position * animation;
+            io.add_component(entity, transf);
             io.add_component(entity, rdr_component);
             io.add_component(entity, color_extra(color));
         }
