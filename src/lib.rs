@@ -12,7 +12,7 @@ use cimvr_common::{
     },
     utils::{camera::Perspective, input_helper::InputHelper},
     vr::VrUpdate,
-    Transform,
+    Transform, ui::{UiStateHelper, Schema, State, UiHandle, UiRequest, UiUpdate},
 };
 use cimvr_engine_interface::{dbg, make_app_state, pkg_namespace, prelude::*, println, FrameTime};
 use kinematics::KinematicPhysics;
@@ -41,6 +41,11 @@ struct ClientState {
     input: InputAbstraction,
     motion_cfg: ShipCharacteristics,
     path: Path,
+
+    // TODO: This should all go in another struct
+    gui: UiStateHelper,
+    gui_element: UiHandle,
+    ready_state: bool,
 }
 
 pub const SHIP_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Ship"));
@@ -149,6 +154,10 @@ impl UserState for ClientState {
             .subscribe::<FrameTime>()
             .build();
 
+        sched.add_system(Self::gui)
+            .subscribe::<UiUpdate>()
+            .build();
+
         let animation_pos = path.lerp(6.);
         let mut anim = CountdownAnimation::new(io, animation_pos);
         CountdownAnimation::assets(io);
@@ -208,6 +217,17 @@ impl UserState for ClientState {
             max_impulse: 30.,
         };
 
+        let mut gui = UiStateHelper::new();
+        let schema = vec![
+            Schema::Button { text: "Toggle Ready".into() },
+            Schema::Label,
+        ];
+        let init_state = vec![
+            State::Button { clicked: false },
+            State::Label { text: "(Not ready)".into() },
+        ];
+        let gui_element = gui.add(io, "FZ", schema, init_state);
+
         Self {
             client_id: None,
             motion_cfg,
@@ -218,11 +238,28 @@ impl UserState for ClientState {
             anim,
             camera_ent,
             ship_ent,
+            gui,
+            gui_element,
+            ready_state: false,
         }
     }
 }
 
 impl ClientState {
+    fn gui(&mut self, io: &mut EngineIo, _query: &mut QueryResult) {
+        self.gui.download(io);
+        if self.gui.read(self.gui_element)[0] != (State::Button { clicked: false }) {
+            self.ready_state = !self.ready_state;
+            self.gui.modify(io, self.gui_element, |ui_state| {
+                let text = match self.ready_state {
+                    true => "Ready!".into(),
+                    false => "(Not ready)".into(),
+                };
+                ui_state[1] = State::Label { text };
+            })
+        }
+    }
+
     fn deleter(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
         if let Some(my_id) = self.client_id {
             for entity in query.iter() {
