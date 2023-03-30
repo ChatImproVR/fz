@@ -1,4 +1,7 @@
-use cimvr_common::{Transform, glam::{Vec3, Quat}};
+use cimvr_common::{
+    glam::{Quat, Vec3},
+    Transform,
+};
 use cimvr_engine_interface::{pkg_namespace, prelude::*};
 use serde::{Deserialize, Serialize};
 

@@ -1,10 +1,39 @@
-use cimvr_common::{glam::Vec3, Transform};
+use cimvr_common::{
+    glam::{Mat3, Quat, Vec3},
+    render::Mesh,
+    Transform,
+};
 
-pub struct Path {
+/// Extract position and orientation data from the specially designed path mesh
+pub fn path_mesh_to_transforms(mesh: &Mesh) -> Vec<Transform> {
+    let mut transforms = vec![];
+
+    for axes in mesh.vertices.chunks_exact(4) {
+        let origin = Vec3::from(axes[1].pos);
+
+        let to_vect = |i: usize| (Vec3::from(axes[i].pos) - origin);
+
+        let x = -to_vect(0);
+        let y = to_vect(2);
+        let z = -to_vect(3);
+
+        let mat = Mat3::from_cols(-x, y, z);
+        let orient = Quat::from_mat3(&mat);
+
+        transforms.push(Transform {
+            pos: origin,
+            orient,
+        })
+    }
+
+    transforms
+}
+
+pub struct Curve {
     pub ctrlps: Vec<Transform>,
 }
 
-impl Path {
+impl Curve {
     pub fn new(ctrlps: Vec<Transform>) -> Self {
         Self { ctrlps }
     }
@@ -24,7 +53,7 @@ impl Path {
     /// Linearly interpolate along the path
     pub fn lerp(&self, t: f32) -> Transform {
         let (behind, in_front) = self.index(t);
-        trans_lerp_slerp(self.ctrlps[behind], self.ctrlps[in_front], t.fract())
+        self.ctrlps[behind].lerp_slerp(&self.ctrlps[in_front], t.fract())
     }
 
     /// Estimates the nearest curve index `t` to the given 3D position.
@@ -42,13 +71,5 @@ impl Path {
         }
 
         smallest_idx
-    }
-}
-
-/// Interpolate between transforms
-pub fn trans_lerp_slerp(a: Transform, b: Transform, t: f32) -> Transform {
-    Transform {
-        pos: a.pos.lerp(b.pos, t),
-        orient: a.orient.slerp(b.orient, t),
     }
 }

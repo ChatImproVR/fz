@@ -1,6 +1,5 @@
 use cimvr_common::render::{Mesh, Vertex};
 
-
 /// Read OBJ lines into the mesh
 pub fn obj_lines_to_mesh(obj: &str) -> Mesh {
     let mut m = Mesh::new();
