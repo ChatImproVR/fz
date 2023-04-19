@@ -43,7 +43,7 @@ impl KinematicPhysics {
 }
 
 pub fn simulate(query: &mut QueryResult, dt: f32) {
-    for key in query.iter() {
+    for key in query.iter("Kinematics") {
         let kine = query.read::<KinematicPhysics>(key);
         query.modify::<Transform>(key, |t| {
             t.pos += kine.vel * dt;
@@ -53,7 +53,7 @@ pub fn simulate(query: &mut QueryResult, dt: f32) {
 }
 
 pub fn gravity(query: &mut QueryResult, dt: f32, g: Vec3) {
-    for key in query.iter() {
+    for key in query.iter("Kinematics") {
         query.modify::<KinematicPhysics>(key, |k| k.vel += dt * g);
     }
 }

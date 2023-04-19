@@ -105,7 +105,9 @@ impl UserState for ClientState {
         sched
             .add_system(Self::deleter)
             .subscribe::<ClientIdMessage>()
-            .query::<ServerShipComponent>(Access::Read)
+            .query("AllServerShips")
+                .intersect::<ServerShipComponent>(Access::Read)
+                .finish()
             .build();
 
         sched
@@ -138,17 +140,21 @@ impl UserState for ClientState {
         // Add physics system
         sched
             .add_system(Self::kinematics_update)
-            .query::<Transform>(Access::Write)
-            .query::<KinematicPhysics>(Access::Write)
+            .query("Kinematics")
+                .intersect::<Transform>(Access::Write)
+                .intersect::<KinematicPhysics>(Access::Write)
+                .finish()
             .subscribe::<FrameTime>()
             .build();
 
         // Add physics system
         sched
             .add_system(Self::motion_update)
-            .query::<Transform>(Access::Write)
-            .query::<KinematicPhysics>(Access::Write)
-            .query::<ClientShipComponent>(Access::Read)
+            .query("ClientShip")
+                .intersect::<Transform>(Access::Write)
+                .intersect::<KinematicPhysics>(Access::Write)
+                .intersect::<ClientShipComponent>(Access::Read)
+                .finish()
             .subscribe::<FrameTime>()
             .build();
 
@@ -157,8 +163,10 @@ impl UserState for ClientState {
             .subscribe::<InputEvent>()
             .subscribe::<VrUpdate>()
             .subscribe::<FrameTime>()
-            .query::<Transform>(Access::Write)
-            .query::<ClientShipComponent>(Access::Write)
+            .query("ClientShip")
+                .intersect::<Transform>(Access::Write)
+                .intersect::<ClientShipComponent>(Access::Write)
+                .finish()
             .build();
 
         // For editing ui: sends schema implicitly
@@ -223,7 +231,7 @@ impl ClientState {
 
     fn deleter(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
         if let Some(my_id) = self.client_id {
-            for entity in query.iter() {
+            for entity in query.iter("AllServerShips") {
                 let ServerShipComponent(id) = query.read(entity);
                 if id == my_id {
                     io.remove_entity(entity);
@@ -264,7 +272,7 @@ impl ClientState {
         );
 
         // Set camera pos
-        if let Some(ship_ent) = query.iter().next() {
+        if let Some(ship_ent) = query.iter("ClientShip").next() {
             let ship_transf: Transform = query.read(ship_ent);
 
             let cam_pos = Transform::new()
@@ -317,7 +325,7 @@ impl ClientState {
     fn motion_update(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
         let Some(FrameTime { delta, .. }) = io.inbox_first() else { return };
 
-        if let Some(ship_ent) = query.iter().next() {
+        if let Some(ship_ent) = query.iter("ClientShip").next() {
             // Get current physical properties
             let mut kt: KinematicPhysics = query.read(ship_ent);
             let mut tf: Transform = query.read(ship_ent);

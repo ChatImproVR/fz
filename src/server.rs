@@ -22,23 +22,29 @@ impl UserState for ServerState {
             .add_system(Self::conn_update)
             .stage(Stage::PreUpdate)
             .subscribe::<Connections>()
-            .query::<ServerShipComponent>(Access::Write)
+            .query("ServerShip")
+                .intersect::<ServerShipComponent>(Access::Write)
+                .finish()
             .build();
 
         // Add physics system
         sched
             .add_system(Self::kinematics_update)
-            .query::<Transform>(Access::Write)
-            .query::<KinematicPhysics>(Access::Write)
+            .query("Kinematics")
+                .intersect::<Transform>(Access::Write)
+                .intersect::<KinematicPhysics>(Access::Write)
+                .finish()
             .subscribe::<FrameTime>()
             .build();
 
         sched
             .add_system(Self::ship_update)
             .subscribe::<ShipUpload>()
-            .query::<ServerShipComponent>(Access::Read)
-            .query::<Transform>(Access::Write)
-            .query::<KinematicPhysics>(Access::Write)
+            .query("ServerShips")
+                .intersect::<ServerShipComponent>(Access::Read)
+                .intersect::<Transform>(Access::Write)
+                .intersect::<KinematicPhysics>(Access::Write)
+                .finish()
             .build();
 
         Self {
@@ -54,7 +60,7 @@ impl ServerState {
         let ship_updates: HashMap<ClientId, ShipUpload> =
             io.inbox_clients::<ShipUpload>().collect();
 
-        for entity in query.iter() {
+        for entity in query.iter("ServerShips") {
             let ServerShipComponent(client_id) = query.read(entity);
             if let Some(ShipUpload(transform, kt)) = ship_updates.get(&client_id) {
                 query.write(entity, transform);
@@ -69,7 +75,7 @@ impl ServerState {
                 clients.into_iter().map(|c| c.id).collect();
 
             // Remove entities corresponding to disconnected clients
-            for entity in query.iter() {
+            for entity in query.iter("ServerShip") {
                 let ServerShipComponent(client_id) = query.read(entity);
                 if !current_connections.contains(&client_id) {
                     io.remove_entity(entity);
@@ -78,7 +84,7 @@ impl ServerState {
 
             // Filter for new connections
             let mut new_connections = current_connections;
-            for entity in query.iter() {
+            for entity in query.iter("ServerShip") {
                 let ServerShipComponent(client_id) = query.read(entity);
                 if !new_connections.remove(&client_id) {
                     println!("{:?} disconnected", client_id);
