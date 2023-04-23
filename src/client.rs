@@ -352,6 +352,7 @@ impl ClientState {
             }
         }
 
+        // Watch from their ship's perspective
         let mut pos = Transform::default();
         for entity in query.iter("ServerShips") {
             let shipc = query.read::<ServerShipComponent>(entity);
@@ -361,7 +362,13 @@ impl ClientState {
             }
         }
 
-        pos
+        pos * Self::cam_offset()
+    }
+
+    fn cam_offset() -> Transform {
+        Transform::new()
+            .with_rotation(Quat::from_euler(EulerRot::XYZ, 0., -FRAC_PI_2, 0.))
+            .with_position(Vec3::new(-13., 2., 0.))
     }
 
     fn camera_trail_behind(query: &mut QueryResult) -> Transform {
@@ -369,11 +376,7 @@ impl ClientState {
         if let Some(ship_ent) = query.iter("ClientShip").next() {
             let ship_transf: Transform = query.read(ship_ent);
 
-            let cam_pos = Transform::new()
-                .with_rotation(Quat::from_euler(EulerRot::XYZ, 0., -FRAC_PI_2, 0.))
-                .with_position(Vec3::new(-13., 2., 0.));
-
-            ship_transf * cam_pos
+            ship_transf * Self::cam_offset()
         } else {
             Transform::new()
         }
