@@ -22,29 +22,29 @@ impl UserState for ServerState {
             .add_system(Self::conn_update)
             .stage(Stage::PreUpdate)
             .subscribe::<Connections>()
-            .query("ServerShip")
+            .query(Query::new("ServerShip")
                 .intersect::<ServerShipComponent>(Access::Write)
-                .finish()
+            )
             .build();
 
         // Add physics system
         sched
             .add_system(Self::kinematics_update)
-            .query("Kinematics")
+            .query(Query::new("Kinematics")
                 .intersect::<Transform>(Access::Write)
                 .intersect::<KinematicPhysics>(Access::Write)
-                .finish()
+            )
             .subscribe::<FrameTime>()
             .build();
 
         sched
             .add_system(Self::ship_update)
             .subscribe::<ShipUpload>()
-            .query("ServerShips")
+            .query(Query::new("ServerShips")
                 .intersect::<ServerShipComponent>(Access::Read)
                 .intersect::<Transform>(Access::Write)
                 .intersect::<KinematicPhysics>(Access::Write)
-                .finish()
+            )
             .build();
 
         Self {

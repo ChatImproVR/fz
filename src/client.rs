@@ -105,9 +105,9 @@ impl UserState for ClientState {
         sched
             .add_system(Self::deleter)
             .subscribe::<ClientIdMessage>()
-            .query("AllServerShips")
+            .query(Query::new("AllServerShips")
                 .intersect::<ServerShipComponent>(Access::Read)
-                .finish()
+            )
             .build();
 
         sched
@@ -140,21 +140,21 @@ impl UserState for ClientState {
         // Add physics system
         sched
             .add_system(Self::kinematics_update)
-            .query("Kinematics")
+            .query(Query::new("Kinematics")
                 .intersect::<Transform>(Access::Write)
                 .intersect::<KinematicPhysics>(Access::Write)
-                .finish()
+            )
             .subscribe::<FrameTime>()
             .build();
 
         // Add physics system
         sched
             .add_system(Self::motion_update)
-            .query("ClientShip")
+            .query(Query::new("ClientShip")
                 .intersect::<Transform>(Access::Write)
                 .intersect::<KinematicPhysics>(Access::Write)
                 .intersect::<ClientShipComponent>(Access::Read)
-                .finish()
+            )
             .subscribe::<FrameTime>()
             .build();
 
@@ -163,10 +163,10 @@ impl UserState for ClientState {
             .subscribe::<InputEvent>()
             .subscribe::<VrUpdate>()
             .subscribe::<FrameTime>()
-            .query("ClientShip")
+            .query(Query::new("ClientShip")
                 .intersect::<Transform>(Access::Write)
                 .intersect::<ClientShipComponent>(Access::Write)
-                .finish()
+            )
             .build();
 
         // For editing ui: sends schema implicitly
