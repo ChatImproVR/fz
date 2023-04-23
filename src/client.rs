@@ -65,14 +65,30 @@ pub struct ClientState {
 
 pub const MAP_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Map"));
 pub const FLOOR_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Floor"));
+pub const FINISH_RDR : MeshHandle = MeshHandle::new(pkg_namespace!("FinishLine"));
+
+const FINISH_LINE_INDEX: f32 = 10.;
+
+fn finish_line_pos(curve: &Curve) -> Transform {
+    curve.lerp(FINISH_LINE_INDEX)
+}
 
 impl UserState for ClientState {
     // Implement a constructor
     fn new(io: &mut EngineIo, sched: &mut EngineSchedule<Self>) -> Self {
+        // Parse path mesh
+        let path = Curve::new(path_mesh_to_transforms(&obj_lines_to_mesh(PATH_OBJ)));
+
         // Add environment
         io.create_entity()
             .add_component(Transform::identity())
             .add_component(Render::new(MAP_RDR).primitive(Primitive::Lines))
+            .build();
+
+        // Add finish line
+        io.create_entity()
+            .add_component(finish_line_pos(&path))
+            .add_component(Render::new(FINISH_RDR).primitive(Primitive::Lines))
             .build();
 
         // Add floor
@@ -80,9 +96,6 @@ impl UserState for ClientState {
             .add_component(Transform::new().with_position(Vec3::new(0., -50., 0.)))
             .add_component(Render::new(FLOOR_RDR).primitive(Primitive::Lines))
             .build();
-
-        // Parse path mesh
-        let path = Curve::new(path_mesh_to_transforms(&obj_lines_to_mesh(PATH_OBJ)));
 
         //let mesh = obj_lines_to_mesh(include_str!("assets/ship.obj"));
         let mut environment_mesh = obj_lines_to_mesh(ENV_OBJ);
@@ -103,6 +116,16 @@ impl UserState for ClientState {
             mesh: ship_mesh,
             id: SHIP_RDR,
         });
+
+        let mut finish_line_mesh = obj_lines_to_mesh(include_str!("assets/finish_line.obj"));
+        finish_line_mesh.vertices.iter_mut().for_each(|v| v.uvw = [1., 0., 0.]);
+
+        // Upload finishline
+        io.send(&UploadMesh {
+            mesh: finish_line_mesh,
+            id: FINISH_RDR,
+        });
+
 
         // Add camera
         let camera_ent = io
@@ -237,7 +260,6 @@ impl UserState for ClientState {
 impl ClientState {
     fn gui(&mut self, io: &mut EngineIo, _query: &mut QueryResult) {
         // Toggle ready state based on UI interaction
-        let mut true_bool = true;
         if let GameMode::Spectator { ready, .. } = &mut self.mode {
             self.gui.download(io);
             if self.gui.read(self.ready_state_element)[0] != (State::Button { clicked: false }) {
