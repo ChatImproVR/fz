@@ -448,10 +448,6 @@ impl ClientState {
         let Some(time) = io.inbox_first() else { return };
         let FrameTime { delta, .. } = time;
 
-        if !self.countdown.match_started(time) {
-            return;
-        }
-
         let Some(ship_ent) = query.iter("ClientShip").next() else { return };
 
         // Get current physical properties
@@ -469,10 +465,14 @@ impl ClientState {
             &mut kt,
         );
 
+        io.send(&ShipUpload(tf, kt));
+
+        if !self.countdown.match_started(time) {
+            return;
+        }
+
         query.write(ship_ent, &kt);
         query.write(ship_ent, &tf);
-
-        io.send(&ShipUpload(tf, kt));
 
         // Check if we've crossed the finish line
         let area_sanity_check =
