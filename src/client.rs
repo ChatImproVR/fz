@@ -20,8 +20,8 @@ use crate::{
     kinematics,
     obj::obj_lines_to_mesh,
     shapes::grid_mesh,
-    ClientReady, ClientShipComponent, InputAbstraction, ServerShipComponent, ShipCharacteristics,
-    ShipUpload, StartRace, SHIP_RDR, Finished,
+    ClientReady, ClientShipComponent, Finished, InputAbstraction, ServerShipComponent,
+    ShipCharacteristics, ShipUpload, StartRace, SHIP_RDR,
 };
 
 // TODO: This is a dumb thing to hardcode lol
@@ -198,10 +198,7 @@ impl UserState for ClientState {
                     .intersect::<KinematicPhysics>(Access::Write)
                     .intersect::<ClientShipComponent>(Access::Read),
             )
-            .query(
-                Query::new("ServerShips")
-                    .intersect::<ServerShipComponent>(Access::Read),
-            )
+            .query(Query::new("ServerShips").intersect::<ServerShipComponent>(Access::Read))
             .subscribe::<FrameTime>()
             .build();
 
@@ -297,9 +294,11 @@ impl ClientState {
             for ship_entity in query.iter("AllServerShips") {
                 let ServerShipComponent {
                     client_id: ships_id,
+                    is_racing,
                     ..
                 } = query.read(ship_entity);
-                if ships_id == client_id {
+
+                if ships_id == client_id || !is_racing {
                     io.remove_entity(ship_entity);
                 }
             }
@@ -346,9 +345,9 @@ impl ClientState {
         if watching.is_none() {
             for entity in query.iter("ServerShips") {
                 let shipc = query.read::<ServerShipComponent>(entity);
-                if shipc.is_racing {
+                //if shipc.is_racing {
                     *watching = Some(shipc.client_id);
-                }
+                //}
             }
         }
 
@@ -425,10 +424,7 @@ impl ClientState {
             position,
         }) = io.inbox_first()
         {
-            self.mode = GameMode::Racing {
-                client_id,
-                lap: 0,
-            };
+            self.mode = GameMode::Racing { client_id, lap: 0 };
 
             dbg!("RACE STARTED");
 
@@ -489,8 +485,10 @@ impl ClientState {
                 if *lap > N_LAPS {
                     io.send(&Finished(self.countdown.elapsed(time)));
 
-                    self.mode = GameMode::Spectator { watching: None, ready: false };
-
+                    self.mode = GameMode::Spectator {
+                        watching: None,
+                        ready: false,
+                    };
                 }
             }
         }
