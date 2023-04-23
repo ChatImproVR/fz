@@ -21,11 +21,11 @@ use crate::{
     obj::obj_lines_to_mesh,
     shapes::grid_mesh,
     ClientReady, ClientShipComponent, InputAbstraction, ServerShipComponent, ShipCharacteristics,
-    ShipUpload, StartRace, SHIP_RDR,
+    ShipUpload, StartRace, SHIP_RDR, Finished,
 };
 
 // TODO: This is a dumb thing to hardcode lol
-const N_LAPS: usize = 3;
+const N_LAPS: usize = 0;
 const ENV_OBJ: &str = include_str!("assets/loop1_env.obj");
 const PATH_OBJ: &str = include_str!("assets/loop1_path.obj");
 
@@ -41,8 +41,6 @@ enum GameMode {
         client_id: ClientId,
         /// Lap count
         lap: usize,
-        /// Laps in this course
-        needed_laps: usize,
     },
 }
 
@@ -386,7 +384,6 @@ impl ClientState {
             self.mode = GameMode::Racing {
                 client_id,
                 lap: 0,
-                needed_laps: N_LAPS,
             };
 
             dbg!("RACE STARTED");
@@ -400,8 +397,16 @@ impl ClientState {
     }
 
     fn motion_update(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
+        if !matches!(self.mode, GameMode::Racing { .. }) {
+            return;
+        }
+
         let Some(time) = io.inbox_first() else { return };
         let FrameTime { delta, .. } = time;
+
+        if !self.countdown.match_started(time) {
+            return;
+        }
 
         let Some(ship_ent) = query.iter("ClientShip").next() else { return };
 
@@ -411,16 +416,14 @@ impl ClientState {
         //let ShipComponent(client_id) = query.read(ship_ent);
 
         // Step ship forward in time
-        if self.countdown.match_started(time) {
-            ship_controller(
-                delta,
-                self.motion_cfg,
-                self.input,
-                &self.path,
-                &mut tf,
-                &mut kt,
-            );
-        }
+        ship_controller(
+            delta,
+            self.motion_cfg,
+            self.input,
+            &self.path,
+            &mut tf,
+            &mut kt,
+        );
 
         query.write(ship_ent, &kt);
         query.write(ship_ent, &tf);
@@ -434,7 +437,12 @@ impl ClientState {
         let cross_over = (finish_line.inverse() * self.last_ship_pos).pos.x < 0.
             && (finish_line.inverse() * tf).pos.x > 0.;
         if area_sanity_check && cross_over {
-            dbg!("Crossed over");
+            if let GameMode::Racing { lap, .. } = &mut self.mode {
+                *lap += 1;
+                if *lap > N_LAPS {
+                    io.send(&Finished(self.countdown.elapsed(time)));
+                }
+            }
         }
 
         self.last_ship_pos = tf;

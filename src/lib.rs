@@ -28,6 +28,11 @@ struct ShipUpload(Transform, KinematicPhysics);
 #[locality("Remote")]
 struct ClientReady(bool);
 
+/// A client finished the race! In the given time...
+#[derive(Message, Copy, Clone, Default, Serialize, Deserialize)]
+#[locality("Remote")]
+struct Finished(f32);
+
 /// Denotes the single ship client-side
 #[derive(Component, serde::Serialize, serde::Deserialize, Default, Copy, Clone, PartialEq, Eq)]
 struct ClientShipComponent;
@@ -36,7 +41,7 @@ struct ClientShipComponent;
 #[derive(Component, serde::Serialize, serde::Deserialize, Default, Copy, Clone, PartialEq, Eq)]
 struct ServerShipComponent {
     pub client_id: ClientId,
-    pub racing: bool,
+    pub is_racing: bool,
     pub is_ready: bool,
 }
 

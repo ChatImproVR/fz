@@ -67,14 +67,17 @@ impl CountdownAnimation {
         }
     }
 
+    pub fn elapsed(&self, time: FrameTime) -> f32 {
+        time.time - self.start_time
+    }
+
     pub fn restart(&mut self) {
         self.needs_restart = true;
         self.is_running = true;
     }
 
     pub fn match_started(&self, time: FrameTime) -> bool {
-        let elapsed = time.time - self.start_time;
-        self.is_running && elapsed > 3.
+        self.is_running && self.elapsed(time) > 3.
     }
 
     pub fn update(&mut self, io: &mut EngineIo, time: FrameTime) {
@@ -87,7 +90,7 @@ impl CountdownAnimation {
             self.needs_restart = false;
         }
 
-        let elapsed = time.time - self.start_time;
+        let elapsed = self.elapsed(time);
 
         let rdr_component = match elapsed as i32 + 1 {
             1 => Render::new(Self::RDR_ID_3),

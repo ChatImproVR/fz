@@ -8,10 +8,18 @@ use cimvr_common::{
 use cimvr_engine_interface::{dbg, prelude::*, println, FrameTime};
 use kinematics::KinematicPhysics;
 
-use crate::{kinematics, ClientReady, ServerShipComponent, ShipUpload, StartRace, SHIP_RDR};
+use crate::{
+    kinematics, ClientReady, Finished, ServerShipComponent, ShipUpload, StartRace, SHIP_RDR,
+};
 
 // All state associated with server-side behaviour
-pub struct ServerState;
+pub struct ServerState {
+    winner: Option<(ClientId, f32)>,
+    reset_countdown: f32,
+}
+
+// All players have 50 seconds after the winner
+const RESET_TIME: f32 = 50.;
 
 impl UserState for ServerState {
     // Implement a constructor
@@ -42,6 +50,13 @@ impl UserState for ServerState {
             .build();
 
         sched
+            .add_system(Self::win_reset)
+            .query(Query::new("Clients").intersect::<ServerShipComponent>(Access::Write))
+            .subscribe::<Finished>()
+            .subscribe::<FrameTime>()
+            .build();
+
+        sched
             .add_system(Self::ship_update)
             .subscribe::<ShipUpload>()
             .query(
@@ -52,11 +67,49 @@ impl UserState for ServerState {
             )
             .build();
 
-        Self {}
+        Self {
+            winner: None,
+            reset_countdown: 0.,
+        }
     }
 }
 
 impl ServerState {
+    fn win_reset(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
+        let Some(FrameTime { time: server_time, .. }) = io.inbox_first() else { return };
+
+        for (client_id, Finished(finish_time)) in io.inbox_clients() {
+            // Mark this client as having finished
+            for entity in query.iter("Clients") {
+                if query.read::<ServerShipComponent>(entity).client_id == client_id {
+                    query.modify::<ServerShipComponent>(entity, |s| s.is_racing = false);
+                }
+            }
+
+            // Decide winner
+            if let Some((_, other_time)) = self.winner {
+                if finish_time > other_time {
+                    continue;
+                }
+            }
+            self.winner = Some((client_id, finish_time));
+            self.reset_countdown = server_time + RESET_TIME;
+        }
+
+        // Check if anybody is reacing
+        let mut anybody_racing = false;
+        for entity in query.iter("Clients") {
+            anybody_racing |= query.read::<ServerShipComponent>(entity).is_racing;
+        }
+
+        // Reset
+        let awaiting_losers = server_time > self.reset_countdown;
+        if self.winner.is_some() && (awaiting_losers || !anybody_racing) {
+            dbg!("Reset");
+            self.winner = None;
+        }
+    }
+
     fn ship_update(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
         // Interpret the last shipupload message we received from each client,
         // and use it to set the position of each ship entity
@@ -116,7 +169,10 @@ impl ServerState {
                 position.pos.x -= 5.;
                 position.pos.z = -position.pos.z;
 
-                query.modify::<ServerShipComponent>(entity, |s| s.is_ready = false);
+                query.modify::<ServerShipComponent>(entity, |s| {
+                    s.is_ready = false;
+                    s.is_racing = true;
+                });
             }
         }
     }
@@ -151,7 +207,7 @@ impl ServerState {
                     .add_component(Render::new(SHIP_RDR).primitive(Primitive::Lines))
                     .add_component(ServerShipComponent {
                         client_id,
-                        racing: false,
+                        is_racing: false,
                         is_ready: false,
                     })
                     .add_component(Synchronized)
