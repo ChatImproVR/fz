@@ -74,7 +74,7 @@ impl CountdownAnimation {
 
     pub fn match_started(&self, time: FrameTime) -> bool {
         let elapsed = time.time - self.start_time;
-        elapsed > 3.
+        self.is_running && elapsed > 3.
     }
 
     pub fn update(&mut self, io: &mut EngineIo, time: FrameTime) {

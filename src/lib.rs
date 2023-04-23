@@ -37,6 +37,7 @@ struct ClientShipComponent;
 struct ServerShipComponent {
     pub client_id: ClientId,
     pub racing: bool,
+    pub is_ready: bool,
 }
 
 #[derive(Clone, Default, Copy)]

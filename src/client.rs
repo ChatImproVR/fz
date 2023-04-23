@@ -386,6 +386,8 @@ impl ClientState {
                 needed_laps: N_LAPS,
             };
 
+            dbg!("RACE STARTED");
+
             self.countdown.restart();
 
             // Reset ship position

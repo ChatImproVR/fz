@@ -1,16 +1,17 @@
 use std::collections::{HashMap, HashSet};
 
 use cimvr_common::{
+    glam::Vec3,
     render::{Primitive, Render},
     Transform,
 };
-use cimvr_engine_interface::{prelude::*, println, FrameTime};
+use cimvr_engine_interface::{dbg, prelude::*, println, FrameTime};
 use kinematics::KinematicPhysics;
 
-use crate::{kinematics, ServerShipComponent, ShipUpload, StartRace, SHIP_RDR};
+use crate::{kinematics, ClientReady, ServerShipComponent, ShipUpload, StartRace, SHIP_RDR};
 
 // All state associated with server-side behaviour
-pub struct ServerState {}
+pub struct ServerState;
 
 impl UserState for ServerState {
     // Implement a constructor
@@ -32,6 +33,12 @@ impl UserState for ServerState {
                     .intersect::<KinematicPhysics>(Access::Write),
             )
             .subscribe::<FrameTime>()
+            .build();
+
+        sched
+            .add_system(Self::client_state_update)
+            .subscribe::<ClientReady>()
+            .query(Query::new("ServerShips").intersect::<ServerShipComponent>(Access::Write))
             .build();
 
         sched
@@ -61,6 +68,55 @@ impl ServerState {
             if let Some(ShipUpload(transform, kt)) = ship_updates.get(&client_id) {
                 query.write(entity, transform);
                 query.write(entity, kt);
+            }
+        }
+    }
+
+    fn client_state_update(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
+        // Update ready-states
+        for (client_id, ClientReady(is_ready)) in io.inbox_clients() {
+            for entity in query.iter("ServerShips") {
+                if query.read::<ServerShipComponent>(entity).client_id == client_id {
+                    query.modify::<ServerShipComponent>(entity, |s| s.is_ready = is_ready);
+                    println!(
+                        "{:?} is {}",
+                        client_id,
+                        if is_ready { "ready" } else { "not ready" }
+                    );
+                }
+            }
+        }
+
+        // Check if all ships are ready
+        let mut all_ready = true;
+        let mut any_ready = false;
+        for entity in query.iter("ServerShips") {
+            let shipc = query.read::<ServerShipComponent>(entity);
+            let is_ready = shipc.is_ready;
+            all_ready &= is_ready;
+            any_ready |= is_ready;
+        }
+
+        // Start the race!
+        if any_ready && all_ready {
+            println!("Starting race!");
+            let mut position = Transform::new().with_position(Vec3::new(0., 0., -5.));
+
+            for entity in query.iter("ServerShips") {
+                let client_id = query.read::<ServerShipComponent>(entity).client_id;
+
+                io.send_to_client(
+                    &StartRace {
+                        position,
+                        client_id,
+                    },
+                    client_id,
+                );
+
+                position.pos.x -= 5.;
+                position.pos.z = -position.pos.z;
+
+                query.modify::<ServerShipComponent>(entity, |s| s.is_ready = false);
             }
         }
     }
@@ -96,14 +152,11 @@ impl ServerState {
                     .add_component(ServerShipComponent {
                         client_id,
                         racing: false,
+                        is_ready: false,
                     })
                     .add_component(Synchronized)
                     .add_component(KinematicPhysics::default())
                     .build();
-
-
-                let position = Transform::default();
-                io.send_to_client(&StartRace { client_id, position }, client_id);
             }
         }
     }
