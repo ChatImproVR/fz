@@ -274,16 +274,20 @@ impl ClientState {
         // Toggle ready state based on UI interaction
         if let GameMode::Spectator { ready, .. } = &mut self.mode {
             self.gui.download(io);
-            if self.gui.read(self.ready_state_element)[0] != (State::Button { clicked: false }) {
+            let clicked = self.gui.read(self.ready_state_element)[0] != (State::Button { clicked: false });
+            if clicked {
                 *ready = !*ready;
-                self.gui.modify(io, self.ready_state_element, |ui_state| {
-                    let text = match ready {
-                        true => "Ready!".into(),
-                        false => "(Not ready)".into(),
-                    };
-                    ui_state[1] = State::Label { text };
-                });
+            }
 
+            self.gui.modify(io, self.ready_state_element, |ui_state| {
+                let text = match ready {
+                    true => "Ready!".into(),
+                    false => "(Not ready)".into(),
+                };
+                ui_state[1] = State::Label { text };
+            });
+
+            if clicked {
                 io.send(&ClientReady(*ready));
             }
         }
@@ -346,7 +350,7 @@ impl ClientState {
             for entity in query.iter("ServerShips") {
                 let shipc = query.read::<ServerShipComponent>(entity);
                 //if shipc.is_racing {
-                    *watching = Some(shipc.client_id);
+                *watching = Some(shipc.client_id);
                 //}
             }
         }
