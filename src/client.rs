@@ -441,12 +441,12 @@ impl ClientState {
     }
 
     fn motion_update(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
-        if !matches!(self.mode, GameMode::Racing { .. }) {
-            return;
-        }
-
         let Some(time) = io.inbox_first() else { return };
         let FrameTime { delta, .. } = time;
+
+        let is_racing = matches!(self.mode, GameMode::Racing { .. });
+        let match_started = self.countdown.match_started(time);
+        let should_be_moving = is_racing && match_started;
 
         let Some(ship_ent) = query.iter("ClientShip").next() else { return };
 
@@ -456,20 +456,21 @@ impl ClientState {
         //let ShipComponent(client_id) = query.read(ship_ent);
 
         // Step ship forward in time
-        ship_controller(
-            delta,
-            self.motion_cfg,
-            self.input,
-            &self.path,
-            &mut tf,
-            &mut kt,
-        );
+        if should_be_moving {
+            ship_controller(
+                delta,
+                self.motion_cfg,
+                self.input,
+                &self.path,
+                &mut tf,
+                &mut kt,
+            );
+        } else {
+            kt.vel = Vec3::ZERO;
+            kt.ang_vel = Vec3::ZERO;
+        }
 
         io.send(&ShipUpload(tf, kt));
-
-        if !self.countdown.match_started(time) {
-            return;
-        }
 
         query.write(ship_ent, &kt);
         query.write(ship_ent, &tf);
