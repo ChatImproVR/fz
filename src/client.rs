@@ -32,7 +32,7 @@ const PATH_OBJ: &str = include_str!("assets/loop1_path.obj");
 enum GameMode {
     Spectator {
         /// Which player to spectate (if any)
-        watching: Option<EntityId>,
+        watching: Option<ClientId>,
         /// Whether the player is ready to enter the next race when it starts
         ready: bool,
     },
@@ -189,7 +189,7 @@ impl UserState for ClientState {
             .subscribe::<FrameTime>()
             .build();
 
-        // Add physics system
+        // Add motion control system
         sched
             .add_system(Self::motion_update)
             .query(
@@ -197,6 +197,10 @@ impl UserState for ClientState {
                     .intersect::<Transform>(Access::Write)
                     .intersect::<KinematicPhysics>(Access::Write)
                     .intersect::<ClientShipComponent>(Access::Read),
+            )
+            .query(
+                Query::new("ServerShips")
+                    .intersect::<ServerShipComponent>(Access::Read),
             )
             .subscribe::<FrameTime>()
             .build();
@@ -210,6 +214,11 @@ impl UserState for ClientState {
                 Query::new("ClientShip")
                     .intersect::<Transform>(Access::Write)
                     .intersect::<ClientShipComponent>(Access::Write),
+            )
+            .query(
+                Query::new("ServerShips")
+                    .intersect::<Transform>(Access::Read)
+                    .intersect::<ServerShipComponent>(Access::Read),
             )
             .build();
 
@@ -324,6 +333,38 @@ impl ClientState {
             },
         );
 
+        let camera_tf = match &mut self.mode {
+            GameMode::Racing { .. } => Self::camera_trail_behind(query),
+            GameMode::Spectator { watching, .. } => Self::camera_spectate(query, watching),
+        };
+
+        io.add_component(self.camera_ent, camera_tf);
+    }
+
+    fn camera_spectate(query: &mut QueryResult, watching: &mut Option<ClientId>) -> Transform {
+        // Find someone to watch
+        if watching.is_none() {
+            for entity in query.iter("ServerShips") {
+                let shipc = query.read::<ServerShipComponent>(entity);
+                if shipc.is_racing {
+                    *watching = Some(shipc.client_id);
+                }
+            }
+        }
+
+        let mut pos = Transform::default();
+        for entity in query.iter("ServerShips") {
+            let shipc = query.read::<ServerShipComponent>(entity);
+            let tf = query.read::<Transform>(entity);
+            if Some(shipc.client_id) == *watching {
+                pos = tf;
+            }
+        }
+
+        pos
+    }
+
+    fn camera_trail_behind(query: &mut QueryResult) -> Transform {
         // Set camera pos
         if let Some(ship_ent) = query.iter("ClientShip").next() {
             let ship_transf: Transform = query.read(ship_ent);
@@ -332,9 +373,9 @@ impl ClientState {
                 .with_rotation(Quat::from_euler(EulerRot::XYZ, 0., -FRAC_PI_2, 0.))
                 .with_position(Vec3::new(-13., 2., 0.));
 
-            let cam_transf = ship_transf * cam_pos;
-
-            io.add_component(self.camera_ent, cam_transf);
+            ship_transf * cam_pos
+        } else {
+            Transform::new()
         }
     }
 
@@ -375,7 +416,7 @@ impl ClientState {
         }
     }
 
-    fn game_mode(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
+    fn game_mode(&mut self, io: &mut EngineIo, _query: &mut QueryResult) {
         if let Some(StartRace {
             client_id,
             position,
@@ -439,8 +480,13 @@ impl ClientState {
         if area_sanity_check && cross_over {
             if let GameMode::Racing { lap, .. } = &mut self.mode {
                 *lap += 1;
+
+                // We've finisehd the whole race!
                 if *lap > N_LAPS {
                     io.send(&Finished(self.countdown.elapsed(time)));
+
+                    self.mode = GameMode::Spectator { watching: None, ready: false };
+
                 }
             }
         }
