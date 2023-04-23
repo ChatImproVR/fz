@@ -17,9 +17,16 @@ use server::ServerState;
 
 pub const SHIP_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Ship"));
 
+/// Clients own the ship positions; this message sends the positions of clients' ships
+/// to the server
 #[derive(Message, Copy, Clone, Default, Serialize, Deserialize)]
 #[locality("Remote")]
 struct ShipUpload(Transform, KinematicPhysics);
+
+/// Sent to inform a given client is ready or not
+#[derive(Message, Copy, Clone, Default, Serialize, Deserialize)]
+#[locality("Remote")]
+struct ClientReady(bool);
 
 /// Denotes the single ship client-side
 #[derive(Component, serde::Serialize, serde::Deserialize, Default, Copy, Clone, PartialEq, Eq)]
@@ -27,18 +34,21 @@ struct ClientShipComponent;
 
 /// Denotes a ship corresponding to a client
 #[derive(Component, serde::Serialize, serde::Deserialize, Default, Copy, Clone, PartialEq, Eq)]
-struct ServerShipComponent(ClientId);
+struct ServerShipComponent {
+    pub client_id: ClientId,
+    pub racing: bool,
+}
 
 #[derive(Clone, Default, Copy)]
 pub struct ShipCharacteristics {
     /// Mass of the ship (Kg)
-    mass: f32,
+    pub mass: f32,
     /// Ship's moment of inertia (Kg * m^2)
-    moment: f32,
+    pub moment: f32,
     /// Maximum angular impulse power (Newton-meters)
-    max_twirl: f32,
+    pub max_twirl: f32,
     /// Maximum thrust (Newtons)
-    max_impulse: f32,
+    pub max_impulse: f32,
 }
 
 // Defines entry points for the engine to hook into.
@@ -48,7 +58,9 @@ make_app_state!(ClientState, ServerState);
 /// Message telling a client which ID it has
 #[derive(Message, Serialize, Deserialize, Debug, Clone, Copy)]
 #[locality("Remote")]
-struct ClientIdMessage(ClientId);
+struct StartRace {
+    client_id: ClientId,
+}
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone, Copy)]
 pub struct InputAbstraction {

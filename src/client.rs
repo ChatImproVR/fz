@@ -20,16 +20,18 @@ use crate::{
     kinematics,
     obj::obj_lines_to_mesh,
     shapes::grid_mesh,
-    ClientIdMessage, ClientShipComponent, InputAbstraction, ServerShipComponent,
-    ShipCharacteristics, ShipUpload, SHIP_RDR,
+    ClientShipComponent, InputAbstraction, ServerShipComponent, ShipCharacteristics, ShipUpload,
+    StartRace, SHIP_RDR,
 };
 
+// TODO: This is a dumb thing to hardcode lol
+const N_LAPS: usize = 3;
 const ENV_OBJ: &str = include_str!("assets/loop1_env.obj");
 const PATH_OBJ: &str = include_str!("assets/loop1_path.obj");
 
 enum GameMode {
     Spectator {
-        /// Which player to spectate (if any) 
+        /// Which player to spectate (if any)
         watching: Option<EntityId>,
         /// Whether the player is ready to enter the next race when it starts
         ready: bool,
@@ -117,10 +119,8 @@ impl UserState for ClientState {
 
         sched
             .add_system(Self::deleter)
-            .subscribe::<ClientIdMessage>()
-            .query(Query::new("AllServerShips")
-                .intersect::<ServerShipComponent>(Access::Read)
-            )
+            .subscribe::<StartRace>()
+            .query(Query::new("AllServerShips").intersect::<ServerShipComponent>(Access::Read))
             .build();
 
         sched
@@ -153,9 +153,10 @@ impl UserState for ClientState {
         // Add physics system
         sched
             .add_system(Self::kinematics_update)
-            .query(Query::new("Kinematics")
-                .intersect::<Transform>(Access::Write)
-                .intersect::<KinematicPhysics>(Access::Write)
+            .query(
+                Query::new("Kinematics")
+                    .intersect::<Transform>(Access::Write)
+                    .intersect::<KinematicPhysics>(Access::Write),
             )
             .subscribe::<FrameTime>()
             .build();
@@ -163,10 +164,11 @@ impl UserState for ClientState {
         // Add physics system
         sched
             .add_system(Self::motion_update)
-            .query(Query::new("ClientShip")
-                .intersect::<Transform>(Access::Write)
-                .intersect::<KinematicPhysics>(Access::Write)
-                .intersect::<ClientShipComponent>(Access::Read)
+            .query(
+                Query::new("ClientShip")
+                    .intersect::<Transform>(Access::Write)
+                    .intersect::<KinematicPhysics>(Access::Write)
+                    .intersect::<ClientShipComponent>(Access::Read),
             )
             .subscribe::<FrameTime>()
             .build();
@@ -176,9 +178,10 @@ impl UserState for ClientState {
             .subscribe::<InputEvent>()
             .subscribe::<VrUpdate>()
             .subscribe::<FrameTime>()
-            .query(Query::new("ClientShip")
-                .intersect::<Transform>(Access::Write)
-                .intersect::<ClientShipComponent>(Access::Write)
+            .query(
+                Query::new("ClientShip")
+                    .intersect::<Transform>(Access::Write)
+                    .intersect::<ClientShipComponent>(Access::Write),
             )
             .build();
 
@@ -210,7 +213,10 @@ impl UserState for ClientState {
         ];
         let gui_element = gui.add(io, "FZ", schema, init_state);
 
-        let mode = GameMode::Spectator { watching: None, ready: false };
+        let mode = GameMode::Spectator {
+            watching: None,
+            ready: false,
+        };
 
         Self {
             mode,
@@ -230,11 +236,10 @@ impl UserState for ClientState {
 
 impl ClientState {
     fn gui(&mut self, io: &mut EngineIo, _query: &mut QueryResult) {
-
         let mut true_bool = true;
         let ready_state = match &mut self.mode {
             GameMode::Spectator { ready, .. } => ready,
-            GameMode::Racing { .. } => &mut true_bool
+            GameMode::Racing { .. } => &mut true_bool,
         };
 
         self.gui.download(io);
@@ -251,20 +256,14 @@ impl ClientState {
     }
 
     fn deleter(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
-        /*
-        if let Some(my_id) = self.client_id {
-            for entity in query.iter("AllServerShips") {
-                let ServerShipComponent(id) = query.read(entity);
-                if id == my_id {
-                    io.remove_entity(entity);
+        if let GameMode::Racing { client_id, .. } = self.mode {
+            for ship_entity in query.iter("AllServerShips") {
+                let ServerShipComponent{ client_id: ships_id, .. } = query.read(ship_entity);
+                if ships_id == client_id {
+                    io.remove_entity(ship_entity);
                 }
             }
         }
-
-        if let Some(ClientIdMessage(id)) = io.inbox_first() {
-            self.client_id = Some(id);
-        }
-        */
     }
 
     fn animation(&mut self, io: &mut EngineIo, _query: &mut QueryResult) {
@@ -345,30 +344,40 @@ impl ClientState {
         }
     }
 
+    fn game_mode(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
+        if let Some(StartRace { client_id }) = io.inbox().next() {
+            self.mode = GameMode::Racing {
+                client_id,
+                lap: 0,
+                needed_laps: N_LAPS,
+            }
+        }
+    }
+
     fn motion_update(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
         let Some(FrameTime { delta, .. }) = io.inbox_first() else { return };
 
-        if let Some(ship_ent) = query.iter("ClientShip").next() {
-            // Get current physical properties
-            let mut kt: KinematicPhysics = query.read(ship_ent);
-            let mut tf: Transform = query.read(ship_ent);
-            //let ShipComponent(client_id) = query.read(ship_ent);
+        let Some(ship_ent) = query.iter("ClientShip").next() else { return };
 
-            // Step ship forward in time
-            ship_controller(
-                delta,
-                self.motion_cfg,
-                self.input,
-                &self.path,
-                &mut tf,
-                &mut kt,
-            );
+        // Get current physical properties
+        let mut kt: KinematicPhysics = query.read(ship_ent);
+        let mut tf: Transform = query.read(ship_ent);
+        //let ShipComponent(client_id) = query.read(ship_ent);
 
-            query.write(ship_ent, &kt);
-            query.write(ship_ent, &tf);
+        // Step ship forward in time
+        ship_controller(
+            delta,
+            self.motion_cfg,
+            self.input,
+            &self.path,
+            &mut tf,
+            &mut kt,
+        );
 
-            io.send(&ShipUpload(tf, kt));
-        }
+        query.write(ship_ent, &kt);
+        query.write(ship_ent, &tf);
+
+        io.send(&ShipUpload(tf, kt));
     }
 
     /// Simulate kinematics

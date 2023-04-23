@@ -7,12 +7,10 @@ use cimvr_common::{
 use cimvr_engine_interface::{prelude::*, println, FrameTime};
 use kinematics::KinematicPhysics;
 
-use crate::{kinematics, ClientIdMessage, ServerShipComponent, ShipUpload, SHIP_RDR};
+use crate::{kinematics, ServerShipComponent, ShipUpload, StartRace, SHIP_RDR};
 
 // All state associated with server-side behaviour
-pub struct ServerState {
-    last_clients: HashSet<ClientId>,
-}
+pub struct ServerState {}
 
 impl UserState for ServerState {
     // Implement a constructor
@@ -22,17 +20,16 @@ impl UserState for ServerState {
             .add_system(Self::conn_update)
             .stage(Stage::PreUpdate)
             .subscribe::<Connections>()
-            .query(Query::new("ServerShip")
-                .intersect::<ServerShipComponent>(Access::Write)
-            )
+            .query(Query::new("ServerShip").intersect::<ServerShipComponent>(Access::Write))
             .build();
 
         // Add physics system
         sched
             .add_system(Self::kinematics_update)
-            .query(Query::new("Kinematics")
-                .intersect::<Transform>(Access::Write)
-                .intersect::<KinematicPhysics>(Access::Write)
+            .query(
+                Query::new("Kinematics")
+                    .intersect::<Transform>(Access::Write)
+                    .intersect::<KinematicPhysics>(Access::Write),
             )
             .subscribe::<FrameTime>()
             .build();
@@ -40,16 +37,15 @@ impl UserState for ServerState {
         sched
             .add_system(Self::ship_update)
             .subscribe::<ShipUpload>()
-            .query(Query::new("ServerShips")
-                .intersect::<ServerShipComponent>(Access::Read)
-                .intersect::<Transform>(Access::Write)
-                .intersect::<KinematicPhysics>(Access::Write)
+            .query(
+                Query::new("ServerShips")
+                    .intersect::<ServerShipComponent>(Access::Read)
+                    .intersect::<Transform>(Access::Write)
+                    .intersect::<KinematicPhysics>(Access::Write),
             )
             .build();
 
-        Self {
-            last_clients: Default::default(),
-        }
+        Self {}
     }
 }
 
@@ -61,7 +57,7 @@ impl ServerState {
             io.inbox_clients::<ShipUpload>().collect();
 
         for entity in query.iter("ServerShips") {
-            let ServerShipComponent(client_id) = query.read(entity);
+            let ServerShipComponent { client_id, .. } = query.read(entity);
             if let Some(ShipUpload(transform, kt)) = ship_updates.get(&client_id) {
                 query.write(entity, transform);
                 query.write(entity, kt);
@@ -76,7 +72,7 @@ impl ServerState {
 
             // Remove entities corresponding to disconnected clients
             for entity in query.iter("ServerShip") {
-                let ServerShipComponent(client_id) = query.read(entity);
+                let ServerShipComponent { client_id, .. } = query.read(entity);
                 if !current_connections.contains(&client_id) {
                     io.remove_entity(entity);
                 }
@@ -85,12 +81,12 @@ impl ServerState {
             // Filter for new connections
             let mut new_connections = current_connections;
             for entity in query.iter("ServerShip") {
-                let ServerShipComponent(client_id) = query.read(entity);
+                let ServerShipComponent { client_id, .. } = query.read(entity);
                 if !new_connections.remove(&client_id) {
                     println!("{:?} disconnected", client_id);
                 }
 
-                io.send_to_client(&ClientIdMessage(client_id), client_id);
+                io.send_to_client(&StartRace { client_id }, client_id);
             }
 
             // Add a new ship entity for each new connection
@@ -99,7 +95,10 @@ impl ServerState {
                 io.create_entity()
                     .add_component(Transform::identity())
                     .add_component(Render::new(SHIP_RDR).primitive(Primitive::Lines))
-                    .add_component(ServerShipComponent(client_id))
+                    .add_component(ServerShipComponent {
+                        client_id,
+                        racing: false,
+                    })
                     .add_component(Synchronized)
                     .add_component(KinematicPhysics::default())
                     .build();
