@@ -57,6 +57,7 @@ pub struct ClientState {
     input: InputAbstraction,
     motion_cfg: ShipCharacteristics,
     path: Curve,
+    last_ship_pos: Transform,
 
     // TODO: This should all go in another struct
     gui: UiStateHelper,
@@ -65,7 +66,7 @@ pub struct ClientState {
 
 pub const MAP_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Map"));
 pub const FLOOR_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Floor"));
-pub const FINISH_RDR : MeshHandle = MeshHandle::new(pkg_namespace!("FinishLine"));
+pub const FINISH_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("FinishLine"));
 
 const FINISH_LINE_INDEX: f32 = 10.;
 
@@ -118,14 +119,16 @@ impl UserState for ClientState {
         });
 
         let mut finish_line_mesh = obj_lines_to_mesh(include_str!("assets/finish_line.obj"));
-        finish_line_mesh.vertices.iter_mut().for_each(|v| v.uvw = [1., 0., 0.]);
+        finish_line_mesh
+            .vertices
+            .iter_mut()
+            .for_each(|v| v.uvw = [1., 0., 0.]);
 
         // Upload finishline
         io.send(&UploadMesh {
             mesh: finish_line_mesh,
             id: FINISH_RDR,
         });
-
 
         // Add camera
         let camera_ent = io
@@ -144,7 +147,6 @@ impl UserState for ClientState {
             .add_system(Self::game_mode)
             .subscribe::<StartRace>()
             .build();
-
 
         sched
             .add_system(Self::deleter)
@@ -257,6 +259,7 @@ impl UserState for ClientState {
             camera_ent,
             ship_ent,
             gui,
+            last_ship_pos: Transform::default(),
             ready_state_element,
         }
     }
@@ -392,6 +395,7 @@ impl ClientState {
 
             // Reset ship position
             io.add_component(self.ship_ent, position);
+            self.last_ship_pos = position;
         }
     }
 
@@ -422,6 +426,18 @@ impl ClientState {
         query.write(ship_ent, &tf);
 
         io.send(&ShipUpload(tf, kt));
+
+        // Check if we've crossed the finish line
+        let area_sanity_check =
+            (self.path.nearest_ctrlp(tf.pos) as i32 - FINISH_LINE_INDEX as i32).abs() < 3;
+        let finish_line = finish_line_pos(&self.path);
+        let cross_over = (finish_line.inverse() * self.last_ship_pos).pos.x < 0.
+            && (finish_line.inverse() * tf).pos.x > 0.;
+        if area_sanity_check && cross_over {
+            dbg!("Crossed over");
+        }
+
+        self.last_ship_pos = tf;
     }
 
     /// Simulate kinematics
