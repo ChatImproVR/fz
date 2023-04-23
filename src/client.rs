@@ -20,8 +20,8 @@ use crate::{
     kinematics,
     obj::obj_lines_to_mesh,
     shapes::grid_mesh,
-    ClientShipComponent, InputAbstraction, ServerShipComponent, ShipCharacteristics, ShipUpload,
-    StartRace, SHIP_RDR,
+    ClientReady, ClientShipComponent, InputAbstraction, ServerShipComponent, ShipCharacteristics,
+    ShipUpload, StartRace, SHIP_RDR,
 };
 
 // TODO: This is a dumb thing to hardcode lol
@@ -60,7 +60,7 @@ pub struct ClientState {
 
     // TODO: This should all go in another struct
     gui: UiStateHelper,
-    gui_element: UiHandle,
+    ready_state_element: UiHandle,
 }
 
 pub const MAP_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Map"));
@@ -211,7 +211,7 @@ impl UserState for ClientState {
                 text: "(Not ready)".into(),
             },
         ];
-        let gui_element = gui.add(io, "FZ", schema, init_state);
+        let ready_state_element = gui.add(io, "FZ", schema, init_state);
 
         let mode = GameMode::Spectator {
             watching: None,
@@ -229,36 +229,39 @@ impl UserState for ClientState {
             camera_ent,
             ship_ent,
             gui,
-            gui_element,
+            ready_state_element,
         }
     }
 }
 
 impl ClientState {
     fn gui(&mut self, io: &mut EngineIo, _query: &mut QueryResult) {
+        // Toggle ready state based on UI interaction
         let mut true_bool = true;
-        let ready_state = match &mut self.mode {
-            GameMode::Spectator { ready, .. } => ready,
-            GameMode::Racing { .. } => &mut true_bool,
-        };
+        if let GameMode::Spectator { ready, .. } = &mut self.mode {
+            self.gui.download(io);
+            if self.gui.read(self.ready_state_element)[0] != (State::Button { clicked: false }) {
+                *ready = !*ready;
+                self.gui.modify(io, self.ready_state_element, |ui_state| {
+                    let text = match ready {
+                        true => "Ready!".into(),
+                        false => "(Not ready)".into(),
+                    };
+                    ui_state[1] = State::Label { text };
+                });
 
-        self.gui.download(io);
-        if self.gui.read(self.gui_element)[0] != (State::Button { clicked: false }) {
-            *ready_state = !*ready_state;
-            self.gui.modify(io, self.gui_element, |ui_state| {
-                let text = match ready_state {
-                    true => "Ready!".into(),
-                    false => "(Not ready)".into(),
-                };
-                ui_state[1] = State::Label { text };
-            })
+                io.send(&ClientReady(*ready));
+            }
         }
     }
 
     fn deleter(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
         if let GameMode::Racing { client_id, .. } = self.mode {
             for ship_entity in query.iter("AllServerShips") {
-                let ServerShipComponent{ client_id: ships_id, .. } = query.read(ship_entity);
+                let ServerShipComponent {
+                    client_id: ships_id,
+                    ..
+                } = query.read(ship_entity);
                 if ships_id == client_id {
                     io.remove_entity(ship_entity);
                 }
@@ -345,12 +348,19 @@ impl ClientState {
     }
 
     fn game_mode(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
-        if let Some(StartRace { client_id }) = io.inbox().next() {
+        if let Some(StartRace {
+            client_id,
+            position,
+        }) = io.inbox_first()
+        {
             self.mode = GameMode::Racing {
                 client_id,
                 lap: 0,
                 needed_laps: N_LAPS,
-            }
+            };
+
+            // Reset ship position
+            io.add_component(self.ship_ent, position);
         }
     }
 

@@ -86,7 +86,9 @@ impl ServerState {
                     println!("{:?} disconnected", client_id);
                 }
 
-                io.send_to_client(&StartRace { client_id }, client_id);
+                let position = Transform::default();
+
+                io.send_to_client(&StartRace { client_id, position }, client_id);
             }
 
             // Add a new ship entity for each new connection

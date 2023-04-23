@@ -60,6 +60,7 @@ make_app_state!(ClientState, ServerState);
 #[locality("Remote")]
 struct StartRace {
     client_id: ClientId,
+    position: Transform,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone, Copy)]
