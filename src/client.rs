@@ -27,9 +27,26 @@ use crate::{
 const ENV_OBJ: &str = include_str!("assets/loop1_env.obj");
 const PATH_OBJ: &str = include_str!("assets/loop1_path.obj");
 
+enum GameMode {
+    Spectator {
+        /// Which player to spectate (if any) 
+        watching: Option<EntityId>,
+        /// Whether the player is ready to enter the next race when it starts
+        ready: bool,
+    },
+    Racing {
+        /// ID of this client, used to ascertain
+        client_id: ClientId,
+        /// Lap count
+        lap: usize,
+        /// Laps in this course
+        needed_laps: usize,
+    },
+}
+
 // All state associated with client-side behaviour
 pub struct ClientState {
-    client_id: Option<ClientId>,
+    mode: GameMode,
     proj: Perspective,
     camera_ent: EntityId,
     ship_ent: EntityId,
@@ -42,14 +59,10 @@ pub struct ClientState {
     // TODO: This should all go in another struct
     gui: UiStateHelper,
     gui_element: UiHandle,
-    ready_state: bool,
 }
 
 pub const MAP_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Map"));
 pub const FLOOR_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Floor"));
-
-// Need a function which can turn a position in 3D and a previous value, and return a next value
-// This value correspondss to the curve interpolation over the whole shibam
 
 impl UserState for ClientState {
     // Implement a constructor
@@ -197,8 +210,10 @@ impl UserState for ClientState {
         ];
         let gui_element = gui.add(io, "FZ", schema, init_state);
 
+        let mode = GameMode::Spectator { watching: None, ready: false };
+
         Self {
-            client_id: None,
+            mode,
             motion_cfg,
             input: InputAbstraction::default(),
             path,
@@ -209,18 +224,24 @@ impl UserState for ClientState {
             ship_ent,
             gui,
             gui_element,
-            ready_state: false,
         }
     }
 }
 
 impl ClientState {
     fn gui(&mut self, io: &mut EngineIo, _query: &mut QueryResult) {
+
+        let mut true_bool = true;
+        let ready_state = match &mut self.mode {
+            GameMode::Spectator { ready, .. } => ready,
+            GameMode::Racing { .. } => &mut true_bool
+        };
+
         self.gui.download(io);
         if self.gui.read(self.gui_element)[0] != (State::Button { clicked: false }) {
-            self.ready_state = !self.ready_state;
+            *ready_state = !*ready_state;
             self.gui.modify(io, self.gui_element, |ui_state| {
-                let text = match self.ready_state {
+                let text = match ready_state {
                     true => "Ready!".into(),
                     false => "(Not ready)".into(),
                 };
@@ -230,6 +251,7 @@ impl ClientState {
     }
 
     fn deleter(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
+        /*
         if let Some(my_id) = self.client_id {
             for entity in query.iter("AllServerShips") {
                 let ServerShipComponent(id) = query.read(entity);
@@ -242,6 +264,7 @@ impl ClientState {
         if let Some(ClientIdMessage(id)) = io.inbox_first() {
             self.client_id = Some(id);
         }
+        */
     }
 
     fn animation(&mut self, io: &mut EngineIo, _query: &mut QueryResult) {
