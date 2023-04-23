@@ -12,6 +12,7 @@ pub struct CountdownAnimation {
     start_time: f32,
     needs_restart: bool,
     position: Transform,
+    is_running: bool,
 }
 
 impl CountdownAnimation {
@@ -62,11 +63,13 @@ impl CountdownAnimation {
             entities,
             start_time: 0.,
             needs_restart: false,
+            is_running: false,
         }
     }
 
     pub fn restart(&mut self) {
         self.needs_restart = true;
+        self.is_running = true;
     }
 
     pub fn match_started(&self, time: FrameTime) -> bool {
@@ -75,6 +78,10 @@ impl CountdownAnimation {
     }
 
     pub fn update(&mut self, io: &mut EngineIo, time: FrameTime) {
+        if !self.is_running {
+            return;
+        }
+
         if self.needs_restart {
             self.start_time = time.time;
             self.needs_restart = false;

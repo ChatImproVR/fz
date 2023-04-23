@@ -141,6 +141,12 @@ impl UserState for ClientState {
             .build();
 
         sched
+            .add_system(Self::game_mode)
+            .subscribe::<StartRace>()
+            .build();
+
+
+        sched
             .add_system(Self::deleter)
             .subscribe::<StartRace>()
             .query(Query::new("AllServerShips").intersect::<ServerShipComponent>(Access::Read))
@@ -154,9 +160,8 @@ impl UserState for ClientState {
         sched.add_system(Self::gui).subscribe::<UiUpdate>().build();
 
         let animation_pos = path.lerp(6.);
-        let mut anim = CountdownAnimation::new(io, animation_pos);
+        let mut countdown = CountdownAnimation::new(io, animation_pos);
         CountdownAnimation::assets(io);
-        anim.restart();
 
         let input_helper = InputHelper::new();
 
@@ -248,7 +253,7 @@ impl UserState for ClientState {
             path,
             proj: Perspective::new(),
             input_helper,
-            countdown: anim,
+            countdown,
             camera_ent,
             ship_ent,
             gui,
@@ -380,7 +385,6 @@ impl ClientState {
                 lap: 0,
                 needed_laps: N_LAPS,
             };
-            panic!();
 
             self.countdown.restart();
 

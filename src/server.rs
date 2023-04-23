@@ -85,10 +85,6 @@ impl ServerState {
                 if !new_connections.remove(&client_id) {
                     println!("{:?} disconnected", client_id);
                 }
-
-                let position = Transform::default();
-
-                io.send_to_client(&StartRace { client_id, position }, client_id);
             }
 
             // Add a new ship entity for each new connection
@@ -104,6 +100,10 @@ impl ServerState {
                     .add_component(Synchronized)
                     .add_component(KinematicPhysics::default())
                     .build();
+
+
+                let position = Transform::default();
+                io.send_to_client(&StartRace { client_id, position }, client_id);
             }
         }
     }
