@@ -25,7 +25,7 @@ use crate::{
 };
 
 // TODO: This is a dumb thing to hardcode lol
-const N_LAPS: usize = 0;
+const N_LAPS: usize = 3;
 const ENV_OBJ: &str = include_str!("assets/loop1_env.obj");
 const PATH_OBJ: &str = include_str!("assets/loop1_path.obj");
 
