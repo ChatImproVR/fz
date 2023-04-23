@@ -52,7 +52,7 @@ impl CountdownAnimation {
             .map(|_| {
                 io.create_entity()
                     .add_component(Transform::default())
-                    .add_component(Render::new(Self::RDR_ID_1))
+                    .add_component(Render::new(Self::RDR_ID_1).limit(Some(0)))
                     .build()
             })
             .collect();
@@ -67,6 +67,11 @@ impl CountdownAnimation {
 
     pub fn restart(&mut self) {
         self.needs_restart = true;
+    }
+
+    pub fn match_started(&self, time: FrameTime) -> bool {
+        let elapsed = time.time - self.start_time;
+        elapsed > 3.
     }
 
     pub fn update(&mut self, io: &mut EngineIo, time: FrameTime) {

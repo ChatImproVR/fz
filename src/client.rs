@@ -10,7 +10,7 @@ use cimvr_common::{
     vr::VrUpdate,
     Transform,
 };
-use cimvr_engine_interface::{pkg_namespace, prelude::*, FrameTime};
+use cimvr_engine_interface::{dbg, pkg_namespace, prelude::*, FrameTime};
 use kinematics::KinematicPhysics;
 
 use crate::{
@@ -52,7 +52,7 @@ pub struct ClientState {
     proj: Perspective,
     camera_ent: EntityId,
     ship_ent: EntityId,
-    anim: CountdownAnimation,
+    countdown: CountdownAnimation,
     input_helper: InputHelper,
     input: InputAbstraction,
     motion_cfg: ShipCharacteristics,
@@ -248,7 +248,7 @@ impl UserState for ClientState {
             path,
             proj: Perspective::new(),
             input_helper,
-            anim,
+            countdown: anim,
             camera_ent,
             ship_ent,
             gui,
@@ -293,7 +293,7 @@ impl ClientState {
 
     fn animation(&mut self, io: &mut EngineIo, _query: &mut QueryResult) {
         let Some(time) = io.inbox_first::<FrameTime>() else { return };
-        self.anim.update(io, time);
+        self.countdown.update(io, time);
     }
 
     fn camera(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
@@ -380,6 +380,9 @@ impl ClientState {
                 lap: 0,
                 needed_laps: N_LAPS,
             };
+            panic!();
+
+            self.countdown.restart();
 
             // Reset ship position
             io.add_component(self.ship_ent, position);
@@ -387,7 +390,8 @@ impl ClientState {
     }
 
     fn motion_update(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
-        let Some(FrameTime { delta, .. }) = io.inbox_first() else { return };
+        let Some(time) = io.inbox_first() else { return };
+        let FrameTime { delta, .. } = time;
 
         let Some(ship_ent) = query.iter("ClientShip").next() else { return };
 
@@ -397,14 +401,16 @@ impl ClientState {
         //let ShipComponent(client_id) = query.read(ship_ent);
 
         // Step ship forward in time
-        ship_controller(
-            delta,
-            self.motion_cfg,
-            self.input,
-            &self.path,
-            &mut tf,
-            &mut kt,
-        );
+        if self.countdown.match_started(time) {
+            ship_controller(
+                delta,
+                self.motion_cfg,
+                self.input,
+                &self.path,
+                &mut tf,
+                &mut kt,
+            );
+        }
 
         query.write(ship_ent, &kt);
         query.write(ship_ent, &tf);
