@@ -181,6 +181,11 @@ impl ServerState {
                     client_id,
                 );
 
+                io.send(&ChatDownload {
+                    username: "Server".to_string(),
+                    text: "RACE STARTED".to_string(),
+                });
+
                 position.pos.x -= 5.;
                 position.pos.z = -position.pos.z;
 

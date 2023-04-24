@@ -1,5 +1,6 @@
 use std::f32::consts::FRAC_PI_2;
 
+use chat::{ChatUpload, ChatDownload};
 use cimvr_common::{
     desktop::{InputEvent, KeyCode},
     gamepad::{Axis, Button, GamepadState},
@@ -274,7 +275,8 @@ impl ClientState {
         // Toggle ready state based on UI interaction
         if let GameMode::Spectator { ready, .. } = &mut self.mode {
             self.gui.download(io);
-            let clicked = self.gui.read(self.ready_state_element)[0] != (State::Button { clicked: false });
+            let clicked =
+                self.gui.read(self.ready_state_element)[0] != (State::Button { clicked: false });
             if clicked {
                 *ready = !*ready;
             }
@@ -430,8 +432,6 @@ impl ClientState {
         {
             self.mode = GameMode::Racing { client_id, lap: 0 };
 
-            dbg!("RACE STARTED");
-
             self.countdown.restart();
 
             // Reset ship position
@@ -483,6 +483,16 @@ impl ClientState {
             && (finish_line.inverse() * tf).pos.x > 0.;
         if area_sanity_check && cross_over {
             if let GameMode::Racing { lap, .. } = &mut self.mode {
+                if *lap != 9 {
+                    let time = self.countdown.elapsed(time);
+                    let minutes = (time / 60.).floor();
+                    let seconds = (time % 60.).floor();
+                    let milliseconds = ((time % 60.).fract() * 1000.).floor();
+                    io.send(&ChatUpload(format!(
+                        "Lap {lap}, time: {minutes}:{seconds}:{milliseconds}"
+                    )))
+                }
+
                 *lap += 1;
 
                 // We've finisehd the whole race!
