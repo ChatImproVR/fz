@@ -281,16 +281,19 @@ impl ClientState {
                 *ready = !*ready;
             }
 
+            let ready_text = match ready {
+                true => "Ready!".to_string(),
+                false => "(Not ready)".to_string(),
+            };
+
             self.gui.modify(io, self.ready_state_element, |ui_state| {
-                let text = match ready {
-                    true => "Ready!".into(),
-                    false => "(Not ready)".into(),
-                };
+                let text = ready_text.clone();
                 ui_state[1] = State::Label { text };
             });
 
             if clicked {
                 io.send(&ClientReady(*ready));
+                io.send(&ChatUpload(ready_text));
             }
         }
     }

@@ -142,6 +142,7 @@ impl ServerState {
 
     fn client_state_update(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
         // Update ready-states
+        let mut client_state_updated = false;
         for (client_id, ClientReady(is_ready)) in io.inbox_clients() {
             for entity in query.iter("ServerShips") {
                 if query.read::<ServerShipComponent>(entity).client_id == client_id {
@@ -151,6 +152,7 @@ impl ServerState {
                         client_id,
                         if is_ready { "ready" } else { "not ready" }
                     );
+                    client_state_updated = true;
                 }
             }
         }
@@ -158,16 +160,37 @@ impl ServerState {
         // Check if all ships are ready
         let mut all_ready = true;
         let mut any_ready = false;
+        let mut ready_clients = 0;
         for entity in query.iter("ServerShips") {
             let shipc = query.read::<ServerShipComponent>(entity);
             let is_ready = shipc.is_ready;
+
             all_ready &= is_ready;
             any_ready |= is_ready;
+
+            if is_ready {
+                ready_clients += 1;
+            }
         }
+
+        let n_clients = query.iter("ServerShips").count();
+        if client_state_updated {
+            let text = format!("{}/{} ready.", ready_clients, n_clients);
+            io.send(&ChatDownload {
+                username: "Server".into(),
+                text,
+            })
+        }
+
 
         // Start the race!
         if any_ready && all_ready {
             println!("Starting race!");
+            io.send(&ChatDownload {
+                username: "Server".to_string(),
+                text: "RACE STARTED".to_string(),
+            });
+
             let mut position = Transform::new().with_position(Vec3::new(0., 0., -5.));
 
             for entity in query.iter("ServerShips") {
@@ -180,11 +203,6 @@ impl ServerState {
                     },
                     client_id,
                 );
-
-                io.send(&ChatDownload {
-                    username: "Server".to_string(),
-                    text: "RACE STARTED".to_string(),
-                });
 
                 position.pos.x -= 5.;
                 position.pos.z = -position.pos.z;
