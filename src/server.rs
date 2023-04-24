@@ -1,5 +1,9 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::format,
+};
 
+use chat::{ChatDownload, ChatUpload};
 use cimvr_common::{
     glam::Vec3,
     render::{Primitive, Render},
@@ -54,6 +58,7 @@ impl UserState for ServerState {
             .query(Query::new("Clients").intersect::<ServerShipComponent>(Access::Write))
             .subscribe::<Finished>()
             .subscribe::<FrameTime>()
+            .subscribe::<Connections>()
             .build();
 
         sched
@@ -76,9 +81,10 @@ impl UserState for ServerState {
 
 impl ServerState {
     fn win_reset(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
+        let Some(Connections { clients }) = io.inbox_first() else { return };
         let Some(FrameTime { time: server_time, .. }) = io.inbox_first() else { return };
 
-        for (client_id, Finished(finish_time)) in io.inbox_clients() {
+        for (client_id, Finished(finish_time)) in io.inbox_clients().collect::<Vec<_>>() {
             // Mark this client as having finished
             for entity in query.iter("Clients") {
                 if query.read::<ServerShipComponent>(entity).client_id == client_id {
@@ -94,8 +100,15 @@ impl ServerState {
                 }
             }
             self.winner = Some((client_id, finish_time));
-            //io.send(&AnnounceWinner(String));
             self.reset_countdown = server_time + RESET_TIME;
+
+            // Write the winner in a chat message
+            if let Some(winner_client) = clients.iter().find(|c| c.id == client_id) {
+                io.send(&ChatDownload {
+                    username: "Server".into(),
+                    text: format!("Winner: {}", winner_client.username),
+                });
+            }
         }
 
         // Check if anybody is reacing
