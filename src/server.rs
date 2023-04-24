@@ -87,12 +87,14 @@ impl ServerState {
             }
 
             // Decide winner
-            if let Some((_, other_time)) = self.winner {
-                if finish_time > other_time {
+            if let Some((_, winning_time)) = self.winner {
+                if finish_time > winning_time {
+                    // Try the next client
                     continue;
                 }
             }
             self.winner = Some((client_id, finish_time));
+            //io.send(&AnnounceWinner(String));
             self.reset_countdown = server_time + RESET_TIME;
         }
 
