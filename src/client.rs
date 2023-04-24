@@ -459,7 +459,7 @@ impl ClientState {
         //let ShipComponent(client_id) = query.read(ship_ent);
 
         // Step ship forward in time
-        if should_be_moving {
+        let collision = if should_be_moving {
             ship_controller(
                 delta,
                 self.motion_cfg,
@@ -467,10 +467,16 @@ impl ClientState {
                 &self.path,
                 &mut tf,
                 &mut kt,
-            );
+            )
         } else {
             kt.vel = Vec3::ZERO;
             kt.ang_vel = Vec3::ZERO;
+            false
+        };
+
+        if collision {
+            let msg = random_death_message(io);
+            io.send(&ChatUpload(msg));
         }
 
         io.send(&ShipUpload(tf, kt));
@@ -518,4 +524,15 @@ impl ClientState {
         let Some(FrameTime { delta, .. }) = io.inbox_first() else { return };
         kinematics::simulate(query, delta);
     }
+}
+
+fn random_death_message(io: &mut EngineIo) -> String {
+    let msgs = [
+        "WITNESS ME!",
+        "I learned this one from a cartoon",
+        "So it goes",
+    ];
+
+    let picked = msgs[io.random() as usize % msgs.len()];
+    format!("[DEATH] {picked}")
 }

@@ -14,7 +14,9 @@ pub fn ship_controller(
     path: &Curve,
     tf: &mut Transform,
     kt: &mut KinematicPhysics,
-) {
+) -> bool {
+    let mut did_collide = false;
+
     // Calculate position within the course
     let nearest_ctrlp_idx = path.nearest_ctrlp(tf.pos);
     let nearest_ctrlp = path.ctrlps[nearest_ctrlp_idx];
@@ -32,6 +34,7 @@ pub fn ship_controller(
         *tf = nearest_ctrlp;
         kt.ang_vel = Vec3::ZERO;
         kt.vel = Vec3::ZERO;
+        did_collide = true;
     }
 
     // Force controls
@@ -60,7 +63,7 @@ pub fn ship_controller(
     };
 
     // Follow pathdirection smoothly
-    let future_pt = path.lerp(nearest_ctrlp_idx as f32 + 3.5);
+    let future_pt = path.lerp(nearest_ctrlp_idx as f32 + 2.5);
     let wanted_orient =
         future_pt.orient * Quat::from_euler(EulerRot::XYZ, desired_roll * PI / 16., 0., 0.);
 
@@ -81,6 +84,8 @@ pub fn ship_controller(
     let mut path_local_tf = nearest_ctrlp.inverse() * *tf;
     path_local_tf.pos.y = lerp(path_local_tf.pos.y, 0., lerp_speed);
     tf.pos = (nearest_ctrlp * path_local_tf).pos;
+
+    did_collide
 }
 
 fn lerp(a: f32, b: f32, t: f32) -> f32 {
