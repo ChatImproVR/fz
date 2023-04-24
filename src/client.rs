@@ -27,8 +27,8 @@ use crate::{
 
 // TODO: This is a dumb thing to hardcode lol
 const N_LAPS: usize = 3;
-const ENV_OBJ: &str = include_str!("assets/loop3_env.obj");
-const PATH_OBJ: &str = include_str!("assets/loop3_path.obj");
+const ENV_OBJ: &str = include_str!("assets/loop4_env.obj");
+const PATH_OBJ: &str = include_str!("assets/loop4_path.obj");
 
 enum GameMode {
     Spectator {
@@ -503,6 +503,7 @@ impl ClientState {
                 }
 
                 *lap += 1;
+                dbg!(&lap);
 
                 // We've finisehd the whole race!
                 if *lap > N_LAPS {
@@ -531,6 +532,9 @@ fn random_death_message(io: &mut EngineIo) -> String {
         "WITNESS ME!",
         "I learned this one from a cartoon",
         "So it goes",
+        "waaaaaaaa",
+        "*crunch*",
+        "it's been an honor",
     ];
 
     let picked = msgs[io.random() as usize % msgs.len()];
