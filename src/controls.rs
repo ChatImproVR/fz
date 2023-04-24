@@ -78,8 +78,9 @@ pub fn ship_controller(
     kt.vel -= nearest_ctrlp.orient * Vec3::Y * track_rel_vel.y;
 
     // Lock Y pos to track
-    let wanted_y = nearest_ctrlp.pos.y;
-    tf.pos.y = lerp(tf.pos.y, wanted_y, lerp_speed);
+    let mut path_local_tf = nearest_ctrlp.inverse() * *tf;
+    path_local_tf.pos.y = lerp(path_local_tf.pos.y, 0., lerp_speed);
+    tf.pos = (nearest_ctrlp * path_local_tf).pos;
 }
 
 fn lerp(a: f32, b: f32, t: f32) -> f32 {
