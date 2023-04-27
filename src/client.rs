@@ -1,6 +1,6 @@
 use std::f32::consts::FRAC_PI_2;
 
-use chat::{ChatUpload, ChatDownload};
+use chat::{ChatDownload, ChatUpload};
 use cimvr_common::{
     desktop::{InputEvent, KeyCode},
     gamepad::{Axis, Button, GamepadState},
@@ -150,7 +150,10 @@ impl UserState for ClientState {
         sched
             .add_system(Self::deleter)
             .subscribe::<StartRace>()
-            .query(Query::new("AllServerShips").intersect::<ServerShipComponent>(Access::Read))
+            .query(
+                "AllServerShips",
+                Query::new().intersect::<ServerShipComponent>(Access::Read),
+            )
             .build();
 
         sched
@@ -183,7 +186,8 @@ impl UserState for ClientState {
         sched
             .add_system(Self::kinematics_update)
             .query(
-                Query::new("Kinematics")
+                "Kinematics",
+                Query::new()
                     .intersect::<Transform>(Access::Write)
                     .intersect::<KinematicPhysics>(Access::Write),
             )
@@ -194,12 +198,16 @@ impl UserState for ClientState {
         sched
             .add_system(Self::motion_update)
             .query(
-                Query::new("ClientShip")
+                "ClientShip",
+                Query::new()
                     .intersect::<Transform>(Access::Write)
                     .intersect::<KinematicPhysics>(Access::Write)
                     .intersect::<ClientShipComponent>(Access::Read),
             )
-            .query(Query::new("ServerShips").intersect::<ServerShipComponent>(Access::Read))
+            .query(
+                "ServerShips",
+                Query::new().intersect::<ServerShipComponent>(Access::Read),
+            )
             .subscribe::<FrameTime>()
             .build();
 
@@ -209,12 +217,14 @@ impl UserState for ClientState {
             .subscribe::<VrUpdate>()
             .subscribe::<FrameTime>()
             .query(
-                Query::new("ClientShip")
+                "ClientShip",
+                Query::new()
                     .intersect::<Transform>(Access::Write)
                     .intersect::<ClientShipComponent>(Access::Write),
             )
             .query(
-                Query::new("ServerShips")
+                "ServerShips",
+                Query::new()
                     .intersect::<Transform>(Access::Read)
                     .intersect::<ServerShipComponent>(Access::Read),
             )

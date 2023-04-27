@@ -33,14 +33,18 @@ impl UserState for ServerState {
             .add_system(Self::conn_update)
             .stage(Stage::PreUpdate)
             .subscribe::<Connections>()
-            .query(Query::new("ServerShip").intersect::<ServerShipComponent>(Access::Write))
+            .query(
+                "ServerShip",
+                Query::new().intersect::<ServerShipComponent>(Access::Write),
+            )
             .build();
 
         // Add physics system
         sched
             .add_system(Self::kinematics_update)
             .query(
-                Query::new("Kinematics")
+                "Kinematics",
+                Query::new()
                     .intersect::<Transform>(Access::Write)
                     .intersect::<KinematicPhysics>(Access::Write),
             )
@@ -50,12 +54,18 @@ impl UserState for ServerState {
         sched
             .add_system(Self::client_state_update)
             .subscribe::<ClientReady>()
-            .query(Query::new("ServerShips").intersect::<ServerShipComponent>(Access::Write))
+            .query(
+                "ServerShips",
+                Query::new().intersect::<ServerShipComponent>(Access::Write),
+            )
             .build();
 
         sched
             .add_system(Self::win_reset)
-            .query(Query::new("Clients").intersect::<ServerShipComponent>(Access::Write))
+            .query(
+                "Clients",
+                Query::new().intersect::<ServerShipComponent>(Access::Write),
+            )
             .subscribe::<Finished>()
             .subscribe::<FrameTime>()
             .subscribe::<Connections>()
@@ -65,7 +75,8 @@ impl UserState for ServerState {
             .add_system(Self::ship_update)
             .subscribe::<ShipUpload>()
             .query(
-                Query::new("ServerShips")
+                "ServerShips",
+                Query::new()
                     .intersect::<ServerShipComponent>(Access::Read)
                     .intersect::<Transform>(Access::Write)
                     .intersect::<KinematicPhysics>(Access::Write),
@@ -181,7 +192,6 @@ impl ServerState {
                 text,
             })
         }
-
 
         // Start the race!
         if any_ready && all_ready {
