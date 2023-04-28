@@ -26,9 +26,9 @@ use crate::{
 };
 
 // TODO: This is a dumb thing to hardcode lol
-const N_LAPS: usize = 1;
-const ENV_OBJ: &str = include_str!("assets/loop2_env.obj");
-const PATH_OBJ: &str = include_str!("assets/loop2_path.obj");
+const N_LAPS: usize = 3;
+const ENV_OBJ: &str = include_str!("assets/loop1_env.obj");
+const PATH_OBJ: &str = include_str!("assets/loop1_path.obj");
 
 enum GameMode {
     Spectator {
