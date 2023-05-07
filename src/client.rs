@@ -1,4 +1,4 @@
-use std::f32::consts::FRAC_PI_2;
+use std::f32::consts::{FRAC_PI_2, PI};
 
 use chat::{ChatDownload, ChatUpload};
 use cimvr_common::{
@@ -161,7 +161,7 @@ impl UserState for ClientState {
             .subscribe::<FrameTime>()
             .build();
 
-        sched.add_system(Self::gui).subscribe::<UiUpdate>().build();
+        sched.add_system(Self::gui).subscribe::<UiUpdate>().subscribe::<VrUpdate>().build();
 
         let animation_pos = path.lerp(6.);
         let mut countdown = CountdownAnimation::new(io, animation_pos);
@@ -282,11 +282,16 @@ impl UserState for ClientState {
 
 impl ClientState {
     fn gui(&mut self, io: &mut EngineIo, _query: &mut QueryResult) {
+        let is_vr = io.inbox_first::<VrUpdate>().is_some();
+
         // Toggle ready state based on UI interaction
         if let GameMode::Spectator { ready, .. } = &mut self.mode {
             self.gui.download(io);
-            let clicked =
+            let mut clicked =
                 self.gui.read(self.ready_state_element)[0] != (State::Button { clicked: false });
+
+            clicked |= !*ready && is_vr;
+
             if clicked {
                 *ready = !*ready;
             }
@@ -335,6 +340,8 @@ impl ClientState {
             self.proj.handle_event(&event);
         }
 
+        let is_vr = io.inbox_first::<VrUpdate>().is_some();
+
         if let Some(update) = io.inbox_first::<VrUpdate>() {
             self.proj.handle_vr_update(&update);
         }
@@ -352,14 +359,14 @@ impl ClientState {
         );
 
         let camera_tf = match &mut self.mode {
-            GameMode::Racing { .. } => Self::camera_trail_behind(query),
-            GameMode::Spectator { watching, .. } => Self::camera_spectate(query, watching),
+            GameMode::Racing { .. } => Self::camera_trail_behind(query, is_vr),
+            GameMode::Spectator { watching, .. } => Self::camera_spectate(query, watching, is_vr),
         };
 
         io.add_component(self.camera_ent, camera_tf);
     }
 
-    fn camera_spectate(query: &mut QueryResult, watching: &mut Option<ClientId>) -> Transform {
+    fn camera_spectate(query: &mut QueryResult, watching: &mut Option<ClientId>, is_vr: bool) -> Transform {
         // Find someone to watch
         if watching.is_none() {
             for entity in query.iter("ServerShips") {
@@ -380,21 +387,27 @@ impl ClientState {
             }
         }
 
-        pos * Self::cam_offset()
+        pos * Self::cam_offset(is_vr)
     }
 
-    fn cam_offset() -> Transform {
-        Transform::new()
-            .with_rotation(Quat::from_euler(EulerRot::XYZ, 0., -FRAC_PI_2, 0.))
-            .with_position(Vec3::new(-13., 2., 0.))
+    fn cam_offset(is_vr: bool) -> Transform {
+        if is_vr {
+            Transform::new()
+                .with_rotation(Quat::from_euler(EulerRot::XYZ, 0., PI, 0.))
+                .with_position(Vec3::new(0., -0.6, 0.))
+        } else {
+            Transform::new()
+                .with_rotation(Quat::from_euler(EulerRot::XYZ, 0., -FRAC_PI_2, 0.))
+                .with_position(Vec3::new(-13., 2., 0.))
+        }
     }
 
-    fn camera_trail_behind(query: &mut QueryResult) -> Transform {
+    fn camera_trail_behind(query: &mut QueryResult, is_vr: bool) -> Transform {
         // Set camera pos
         if let Some(ship_ent) = query.iter("ClientShip").next() {
             let ship_transf: Transform = query.read(ship_ent);
 
-            ship_transf * Self::cam_offset()
+            ship_transf * Self::cam_offset(is_vr)
         } else {
             Transform::new()
         }
