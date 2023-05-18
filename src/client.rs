@@ -27,8 +27,8 @@ use crate::{
 
 // TODO: This is a dumb thing to hardcode lol
 const N_LAPS: usize = 3;
-const ENV_OBJ: &str = include_str!("assets/loop1_env.obj");
-const PATH_OBJ: &str = include_str!("assets/loop1_path.obj");
+const ENV_OBJ: &str = include_str!("assets/loop2_env.obj");
+const PATH_OBJ: &str = include_str!("assets/loop2_path.obj");
 
 enum GameMode {
     Spectator {
@@ -99,14 +99,16 @@ impl UserState for ClientState {
 
         //let mesh = obj_lines_to_mesh(include_str!("assets/ship.obj"));
         let mut environment_mesh = obj_lines_to_mesh(ENV_OBJ);
-        environment_mesh.recolor([0.2, 1., 0.2]);
+        let c = [1., 0.5, 0.5];
+
+        environment_mesh.recolor(c);
         io.send(&UploadMesh {
             mesh: environment_mesh,
             id: MAP_RDR,
         });
 
         io.send(&UploadMesh {
-            mesh: grid_mesh(20, 20., [0., 0.2, 0.]),
+            mesh: grid_mesh(20, 20., c.map(|k| k * 0.1)),
             id: FLOOR_RDR,
         });
 

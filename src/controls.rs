@@ -29,9 +29,17 @@ pub fn ship_controller(
     let z_bound = path_local_space.pos.z.abs() > TRACK_WIDTH / 2.;
     let y_bound = path_local_space.pos.y.abs() > TRACK_HEIGHT / 2.;
     if z_bound || y_bound {
-        *tf = nearest_ctrlp;
+        let near_space = nearest_iso.inverse();
+
+        //*tf = nearest_ctrlp;
         kt.ang_vel = Vec3::ZERO;
-        kt.vel = Vec3::ZERO;
+        let mut v = near_space.inverse().view().transform_vector3(kt.vel);
+        v.z *= -1.;
+        kt.vel = near_space.view().transform_vector3(v);//Vec3::ZERO;
+
+        *tf = near_space.inverse() * *tf;
+        tf.pos.z *= 0.99;
+        *tf = near_space * *tf;
     }
 
     // Force controls
