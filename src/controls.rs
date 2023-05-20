@@ -38,7 +38,7 @@ pub fn ship_controller(
         kt.vel = near_space.view().transform_vector3(v);//Vec3::ZERO;
 
         *tf = near_space.inverse() * *tf;
-        tf.pos.z *= 0.99;
+        tf.pos.z *= tf.pos.z.signum() * TRACK_WIDTH / 2.;
         *tf = near_space * *tf;
     }
 
